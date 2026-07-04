@@ -1,10 +1,11 @@
 import { json } from '@sveltejs/kit';
-import { getDatasetPage, persistDataset } from '$lib/server/dataset-store';
+import { getDatasetPage, getLatestDatasetPage, persistDataset } from '$lib/server/dataset-store';
 import { fetchRegafiEntities, parseRegafiJson, normalizeRegafiEntity, normalizeFlatEntity } from '$lib/server/regafi';
 
 export async function POST({ request }) {
 	try {
-		const body = await request.json();
+		const text = await request.text();
+		const body = text ? JSON.parse(text) : null;
 
 		if (Array.isArray(body)) {
 			const entities = body.map(normalizeFlatEntity);
@@ -27,6 +28,12 @@ export async function POST({ request }) {
 			return json({ success: true, datasetId: stored.datasetId, count: stored.count });
 		}
 
+		if (typeof body === 'string') {
+			const entities = parseRegafiJson(body);
+			const stored = await persistDataset('regafi', entities);
+			return json({ success: true, datasetId: stored.datasetId, count: stored.count });
+		}
+
 		return json({ success: false, error: 'Format JSON non reconnu' }, { status: 400 });
 	} catch (error) {
 		const message = error instanceof Error ? error.message : 'Erreur inconnue';
@@ -38,10 +45,23 @@ export async function POST({ request }) {
 export async function GET({ url }) {
 	try {
 		const datasetId = url.searchParams.get('datasetId');
+		const latest = url.searchParams.get('latest') === '1';
 		const page = Number(url.searchParams.get('page') || '1');
 		const pageSize = Number(url.searchParams.get('pageSize') || '10');
 		const search = url.searchParams.get('search') || '';
-		const sortKey = url.searchParams.get('sortKey') === 'denomination' ? 'denomination' : 'siren';
+		const sortParam = url.searchParams.get('sortKey');
+		const sortKey = sortParam === 'denomination' || sortParam === 'none' ? sortParam : 'siren';
+
+		if (latest) {
+			const result = await getLatestDatasetPage('regafi', {
+				page: Number.isFinite(page) && page > 0 ? page : 1,
+				pageSize: Number.isFinite(pageSize) && pageSize > 0 ? Math.min(pageSize, 100) : 10,
+				search,
+				sortKey
+			});
+
+			return json({ success: true, ...result });
+		}
 
 		if (!datasetId) {
 			return json({ success: false, error: 'datasetId requis' }, { status: 400 });

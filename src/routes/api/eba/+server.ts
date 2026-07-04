@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit';
-import { getDatasetPage, persistDataset } from '$lib/server/dataset-store';
+import { getDatasetPage, getLatestDatasetPage, persistDataset } from '$lib/server/dataset-store';
 import { parseEbaStream } from '$lib/server/eba';
 
 export async function POST({ request }) {
@@ -22,10 +22,23 @@ export async function POST({ request }) {
 export async function GET({ url }) {
 	try {
 		const datasetId = url.searchParams.get('datasetId');
+		const latest = url.searchParams.get('latest') === '1';
 		const page = Number(url.searchParams.get('page') || '1');
 		const pageSize = Number(url.searchParams.get('pageSize') || '10');
 		const search = url.searchParams.get('search') || '';
-		const sortKey = url.searchParams.get('sortKey') === 'denomination' ? 'denomination' : 'siren';
+		const sortParam = url.searchParams.get('sortKey');
+		const sortKey = sortParam === 'denomination' || sortParam === 'none' ? sortParam : 'siren';
+
+		if (latest) {
+			const result = await getLatestDatasetPage('eba', {
+				page: Number.isFinite(page) && page > 0 ? page : 1,
+				pageSize: Number.isFinite(pageSize) && pageSize > 0 ? Math.min(pageSize, 100) : 10,
+				search,
+				sortKey
+			});
+
+			return json({ success: true, ...result });
+		}
 
 		if (!datasetId) {
 			return json({ success: false, error: 'datasetId requis' }, { status: 400 });
