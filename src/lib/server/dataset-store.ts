@@ -4,7 +4,17 @@ import { join } from 'node:path';
 import type { NormalizedEntity } from '$lib/types';
 
 export type DatasetKind = 'eba' | 'regafi';
-export type DatasetSortKey = 'siren' | 'denomination' | 'none';
+export type DatasetColumnKey =
+	| 'siren'
+	| 'denomination'
+	| 'ville'
+	| 'pays'
+	| 'categorie'
+	| 'entityCode'
+	| 'lei'
+	| 'idReferentiel';
+export type DatasetSortKey = DatasetColumnKey | 'none';
+export type DatasetSortDirection = 'asc' | 'desc';
 
 const STORAGE_DIR = join(process.cwd(), '.data', 'uploads');
 
@@ -70,8 +80,10 @@ export async function getDatasetPage(
 	params: {
 		page: number;
 		pageSize: number;
-		search: string;
+		textFilters: Partial<Record<DatasetColumnKey, string>>;
+		selectFilters: Partial<Record<DatasetColumnKey, string>>;
 		sortKey: DatasetSortKey;
+		sortDir: DatasetSortDirection;
 	}
 ): Promise<{
 	items: NormalizedEntity[];
@@ -79,18 +91,44 @@ export async function getDatasetPage(
 	page: number;
 	pageSize: number;
 	totalPages: number;
+	filterOptions: Partial<Record<DatasetColumnKey, string[]>>;
 }> {
 	const entities = await readDataset(kind, datasetId);
 
-	const query = params.search.trim().toLowerCase();
 	let filtered = entities;
 
-	if (query) {
-		filtered = entities.filter(
-			(entity) =>
-				entity.siren.toLowerCase().includes(query) ||
-				entity.denomination.toLowerCase().includes(query)
-		);
+	for (const [rawKey, rawValue] of Object.entries(params.textFilters)) {
+		const key = rawKey as DatasetColumnKey;
+		const query = (rawValue || '').trim().toLowerCase();
+		if (!query) continue;
+
+		filtered = filtered.filter((entity) => {
+			const value = String(entity[key] ?? '').toLowerCase();
+			return value.includes(query);
+		});
+	}
+
+	const filterOptions: Partial<Record<DatasetColumnKey, string[]>> = {};
+	for (const [rawKey, rawValue] of Object.entries(params.selectFilters)) {
+		const key = rawKey as DatasetColumnKey;
+
+		const values = new Set<string>();
+		for (const entity of filtered) {
+			const value = String(entity[key] ?? '').trim();
+			if (value) values.add(value);
+		}
+		filterOptions[key] = Array.from(values).sort((a, b) => a.localeCompare(b, 'fr', { sensitivity: 'base' }));
+	}
+
+	for (const [rawKey, rawValue] of Object.entries(params.selectFilters)) {
+		const key = rawKey as DatasetColumnKey;
+		const selectedValue = (rawValue || '').trim().toLowerCase();
+		if (!selectedValue) continue;
+
+		filtered = filtered.filter((entity) => {
+			const value = String(entity[key] ?? '').trim().toLowerCase();
+			return value === selectedValue;
+		});
 	}
 
 	const sorted =
@@ -98,7 +136,10 @@ export async function getDatasetPage(
 			? filtered
 			: [...filtered].sort((a, b) => {
 				const sortKey = params.sortKey === 'none' ? 'siren' : params.sortKey;
-				return (a[sortKey] || '').localeCompare(b[sortKey] || '');
+				const left = String(a[sortKey] || '');
+				const right = String(b[sortKey] || '');
+				const result = left.localeCompare(right, 'fr', { sensitivity: 'base' });
+				return params.sortDir === 'desc' ? -result : result;
 			});
 
 	const total = sorted.length;
@@ -112,7 +153,8 @@ export async function getDatasetPage(
 		total,
 		page: safePage,
 		pageSize: params.pageSize,
-		totalPages
+		totalPages,
+		filterOptions
 	};
 }
 
@@ -121,8 +163,10 @@ export async function getLatestDatasetPage(
 	params: {
 		page: number;
 		pageSize: number;
-		search: string;
+		textFilters: Partial<Record<DatasetColumnKey, string>>;
+		selectFilters: Partial<Record<DatasetColumnKey, string>>;
 		sortKey: DatasetSortKey;
+		sortDir: DatasetSortDirection;
 	}
 ): Promise<{
 	datasetId: string | null;
@@ -131,6 +175,7 @@ export async function getLatestDatasetPage(
 	page: number;
 	pageSize: number;
 	totalPages: number;
+	filterOptions: Partial<Record<DatasetColumnKey, string[]>>;
 }> {
 	const datasetId = await getLatestDatasetId(kind);
 
@@ -141,7 +186,8 @@ export async function getLatestDatasetPage(
 			total: 0,
 			page: 1,
 			pageSize: params.pageSize,
-			totalPages: 1
+			totalPages: 1,
+			filterOptions: {}
 		};
 	}
 

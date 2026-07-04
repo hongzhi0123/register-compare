@@ -19,17 +19,10 @@ export async function* extractJsonObjects(
 	let escape = false;
 	let objStack: ObjMarker[] = [];
 
-	let logRaw = true;
-
 	while (true) {
 		const { done, value } = await reader.read();
 		const chunk = decoder.decode(value ?? new Uint8Array(), { stream: !done });
 		buffer += chunk;
-
-		if (logRaw) {
-			console.error('[JSON] raw start:', JSON.stringify(buffer.slice(0, 500)));
-			logRaw = false;
-		}
 
 		for (; pos < buffer.length; pos++) {
 			const ch = buffer[pos];
