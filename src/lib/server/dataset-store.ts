@@ -127,6 +127,12 @@ export async function getDatasetPage(
 
 		filtered = filtered.filter((entity) => {
 			const value = String(entity[key] ?? '').trim().toLowerCase();
+			if (selectedValue === '__empty__') {
+				return value === '';
+			}
+			if (selectedValue === '__non_empty__') {
+				return value !== '';
+			}
 			return value === selectedValue;
 		});
 	}

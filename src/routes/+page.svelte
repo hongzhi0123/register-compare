@@ -15,7 +15,7 @@
 		| 'idReferentiel';
 	type SortKey = DatasetColumnKey | 'none';
 	type SortDirection = 'asc' | 'desc';
-	type FilterType = 'none' | 'text' | 'select';
+	type FilterType = 'none' | 'text' | 'select' | 'text-select';
 
 	interface TableColumn {
 		key: DatasetColumnKey;
@@ -36,8 +36,8 @@
 			widthClass: 'w-36',
 			cellClass: 'truncate max-w-56'
 		},
-		{ key: 'ville', label: 'Ville', sortable: true, filterType: 'none', widthClass: 'w-36' },
-		{ key: 'pays', label: 'Pays', sortable: true, filterType: 'none', widthClass: 'w-28' },
+		{ key: 'ville', label: 'Ville', sortable: true, filterType: 'text-select', widthClass: 'w-36' },
+		{ key: 'pays', label: 'Pays', sortable: true, filterType: 'select', widthClass: 'w-28' },
 		{
 			key: 'categorie',
 			label: 'Catégorie',
@@ -46,7 +46,7 @@
 			widthClass: 'w-44',
 			cellClass: 'truncate max-w-40'
 		},
-		{ key: 'entityCode', label: 'Code EBA', sortable: true, filterType: 'none', widthClass: 'w-36', cellClass: 'font-mono text-xs' }
+		{ key: 'entityCode', label: 'Code EBA', sortable: true, filterType: 'text-select', widthClass: 'w-36', cellClass: 'font-mono text-xs' }
 	];
 
 	const REGAFI_COLUMNS: TableColumn[] = [
@@ -59,8 +59,8 @@
 			widthClass: 'w-36',
 			cellClass: 'truncate max-w-56'
 		},
-		{ key: 'ville', label: 'Ville', sortable: true, filterType: 'none', widthClass: 'w-36' },
-		{ key: 'pays', label: 'Pays', sortable: true, filterType: 'none', widthClass: 'w-28' },
+		{ key: 'ville', label: 'Ville', sortable: true, filterType: 'text-select', widthClass: 'w-36' },
+		{ key: 'pays', label: 'Pays', sortable: true, filterType: 'select', widthClass: 'w-28' },
 		{
 			key: 'categorie',
 			label: 'Catégorie',
@@ -69,12 +69,12 @@
 			widthClass: 'w-44',
 			cellClass: 'truncate max-w-40'
 		},
-		{ key: 'lei', label: 'LEI', sortable: true, filterType: 'none', widthClass: 'w-44', cellClass: 'font-mono text-xs' },
+		{ key: 'lei', label: 'LEI', sortable: true, filterType: 'text-select', widthClass: 'w-44', cellClass: 'font-mono text-xs' },
 		{
 			key: 'idReferentiel',
 			label: 'ID référentiel',
 			sortable: true,
-			filterType: 'none',
+			filterType: 'text-select',
 			widthClass: 'w-44',
 			cellClass: 'font-mono text-xs'
 		}
@@ -82,14 +82,14 @@
 
 	function createTextFilters(columns: TableColumn[]): Partial<Record<DatasetColumnKey, string>> {
 		const entries = columns
-			.filter((column) => column.filterType === 'text')
+			.filter((column) => column.filterType === 'text' || column.filterType === 'text-select')
 			.map((column) => [column.key, ''] as const);
 		return Object.fromEntries(entries) as Partial<Record<DatasetColumnKey, string>>;
 	}
 
 	function createSelectFilters(columns: TableColumn[]): Partial<Record<DatasetColumnKey, string>> {
 		const entries = columns
-			.filter((column) => column.filterType === 'select')
+			.filter((column) => column.filterType === 'select' || column.filterType === 'text-select')
 			.map((column) => [column.key, ''] as const);
 		return Object.fromEntries(entries) as Partial<Record<DatasetColumnKey, string>>;
 	}
@@ -375,25 +375,34 @@
 								<tr class="bg-white border-y border-gray-200">
 									{#each EBA_COLUMNS as column}
 										<th class={`px-4 py-2 ${column.widthClass || ''}`}>
-											{#if column.filterType === 'text'}
-												<input
-													type="text"
-													placeholder={`Filtrer ${column.label.toLowerCase()}...`}
-													class="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
-													value={ebaTextFilters[column.key] ?? ''}
-													oninput={(event) => onEbaTextFilterChange(column.key, (event.currentTarget as HTMLInputElement).value)}
-												/>
-											{:else if column.filterType === 'select'}
-												<select
-													class="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
-													value={ebaSelectFilters[column.key] ?? ''}
-													onchange={(event) => onEbaSelectFilterChange(column.key, (event.currentTarget as HTMLSelectElement).value)}
-												>
-													<option value="">Toutes</option>
-													{#each ebaFilterOptions[column.key] ?? [] as option}
-														<option value={option}>{option}</option>
-													{/each}
-												</select>
+											{#if column.filterType !== 'none'}
+												<div class="space-y-1">
+													{#if column.filterType === 'text' || column.filterType === 'text-select'}
+														<input
+															type="text"
+															placeholder={`Filtrer ${column.label.toLowerCase()}...`}
+															class="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+															value={ebaTextFilters[column.key] ?? ''}
+															oninput={(event) => onEbaTextFilterChange(column.key, (event.currentTarget as HTMLInputElement).value)}
+														/>
+													{/if}
+													{#if column.filterType === 'select' || column.filterType === 'text-select'}
+														<select
+															class="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+															value={ebaSelectFilters[column.key] ?? ''}
+															onchange={(event) => onEbaSelectFilterChange(column.key, (event.currentTarget as HTMLSelectElement).value)}
+														>
+															<option value="">Toutes</option>
+															<option value="__empty__">Valeur vide uniquement</option>
+															<option value="__non_empty__">Exclure les valeurs vides</option>
+															{#if column.filterType === 'select'}
+																{#each ebaFilterOptions[column.key] ?? [] as option}
+																	<option value={option}>{option}</option>
+																{/each}
+															{/if}
+														</select>
+													{/if}
+												</div>
 											{/if}
 										</th>
 									{/each}
@@ -470,25 +479,34 @@
 								<tr class="bg-white border-y border-gray-200">
 									{#each REGAFI_COLUMNS as column}
 										<th class={`px-4 py-2 ${column.widthClass || ''}`}>
-											{#if column.filterType === 'text'}
-												<input
-													type="text"
-													placeholder={`Filtrer ${column.label.toLowerCase()}...`}
-													class="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-red-500"
-													value={regafiTextFilters[column.key] ?? ''}
-													oninput={(event) => onRegafiTextFilterChange(column.key, (event.currentTarget as HTMLInputElement).value)}
-												/>
-											{:else if column.filterType === 'select'}
-												<select
-													class="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-red-500"
-													value={regafiSelectFilters[column.key] ?? ''}
-													onchange={(event) => onRegafiSelectFilterChange(column.key, (event.currentTarget as HTMLSelectElement).value)}
-												>
-													<option value="">Toutes</option>
-													{#each regafiFilterOptions[column.key] ?? [] as option}
-														<option value={option}>{option}</option>
-													{/each}
-												</select>
+											{#if column.filterType !== 'none'}
+												<div class="space-y-1">
+													{#if column.filterType === 'text' || column.filterType === 'text-select'}
+														<input
+															type="text"
+															placeholder={`Filtrer ${column.label.toLowerCase()}...`}
+															class="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-red-500"
+															value={regafiTextFilters[column.key] ?? ''}
+															oninput={(event) => onRegafiTextFilterChange(column.key, (event.currentTarget as HTMLInputElement).value)}
+														/>
+													{/if}
+													{#if column.filterType === 'select' || column.filterType === 'text-select'}
+														<select
+															class="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-red-500"
+															value={regafiSelectFilters[column.key] ?? ''}
+															onchange={(event) => onRegafiSelectFilterChange(column.key, (event.currentTarget as HTMLSelectElement).value)}
+														>
+															<option value="">Toutes</option>
+															<option value="__empty__">Valeur vide uniquement</option>
+															<option value="__non_empty__">Exclure les valeurs vides</option>
+															{#if column.filterType === 'select'}
+																{#each regafiFilterOptions[column.key] ?? [] as option}
+																	<option value={option}>{option}</option>
+																{/each}
+															{/if}
+														</select>
+													{/if}
+												</div>
 											{/if}
 										</th>
 									{/each}
