@@ -46,8 +46,29 @@ function extractProperties(raw: Record<string, unknown>): Record<string, string>
 	return props;
 }
 
+function pickFirstNonEmpty(props: Record<string, string>, keys: string[]): string | null {
+	for (const key of keys) {
+		const value = props[key]?.trim();
+		if (value) return value;
+	}
+	return null;
+}
+
+function extractCountry(props: Record<string, string>): string | null {
+	// EBA payloads can expose country with different property codes depending on the feed version.
+	return pickFirstNonEmpty(props, [
+		'ENT_COU_RES',
+		'ENT_COU_COD_RES',
+		'ENT_COU_NAM_RES',
+		'ENT_COU',
+		'COU_RES',
+		'COUNTRY',
+		'COUNTRY_CODE'
+	]);
+}
+
 function normalizeEbaEntity(raw: Record<string, unknown>): NormalizedEntity | null {
-	if (raw.CA_OwnerID !== 'FR_ACPR') return null;
+	// if (raw.CA_OwnerID !== 'FR_ACPR') return null;
 
 	const props = extractProperties(raw);
 
@@ -58,7 +79,7 @@ function normalizeEbaEntity(raw: Record<string, unknown>): NormalizedEntity | nu
 		siren,
 		denomination: props['ENT_NAM'] || '',
 		ville: props['ENT_TOW_CIT_RES'] || null,
-		pays: 'FRANCE',
+		pays: extractCountry(props),
 		categorie: mapEbaTypeToCategory(String(raw.EntityType || '')),
 		lei: null,
 		entityCode: raw.EntityCode ? String(raw.EntityCode) : undefined,

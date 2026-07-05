@@ -76,6 +76,11 @@ export interface ComparisonMatch {
 	differences: string[];
 }
 
+export interface ComparisonOptions {
+	columns: Array<'siren' | 'denomination'>;
+	nameSimilarityThreshold: number;
+}
+
 export interface ComparisonResult {
 	matches: ComparisonMatch[];
 	summary: {

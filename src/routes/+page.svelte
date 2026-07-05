@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import EbaUpload from '$lib/components/EbaUpload.svelte';
 	import RegafiUpload from '$lib/components/RegafiUpload.svelte';
-	import type { NormalizedEntity } from '$lib/types';
+	import type { ComparisonMatch, ComparisonOptions, ComparisonResult, NormalizedEntity } from '$lib/types';
 
 	type DatasetColumnKey =
 		| 'siren'
@@ -17,6 +17,7 @@
 	type SortDirection = 'asc' | 'desc';
 	type FilterType = 'none' | 'text' | 'select' | 'text-select';
 	type SelectFilterValue = string[];
+	type DatasetKind = 'eba' | 'regafi';
 
 	interface SelectOption {
 		value: string;
@@ -36,6 +37,20 @@
 		filterType: FilterType;
 		widthClass?: string;
 		cellClass?: string;
+	}
+
+	interface CrossCheckRow {
+		origin: 'onlyInEba' | 'onlyInRegafi';
+		status: ComparisonMatch['status'];
+		siren: string;
+		sourceName: string;
+		oppositeName: string;
+		sourceCity: string;
+		oppositeCity: string;
+	}
+
+	interface CrossCheckCriteria {
+		country: string;
 	}
 
 	const EBA_COLUMNS: TableColumn[] = [
@@ -197,6 +212,32 @@
 		return sortKey === key && sortDir === dir;
 	}
 
+	function sortEntities(items: NormalizedEntity[], sortKey: SortKey, sortDir: SortDirection): NormalizedEntity[] {
+		if (sortKey === 'none') return [...items];
+		return [...items].sort((left, right) => {
+			const l = String(left[sortKey] ?? '');
+			const r = String(right[sortKey] ?? '');
+			const result = l.localeCompare(r, 'fr', { sensitivity: 'base' });
+			return sortDir === 'desc' ? -result : result;
+		});
+	}
+
+	function getStatusLabel(status: ComparisonMatch['status']): string {
+		if (status === 'match') return 'Correspondance';
+		if (status === 'nameMismatch') return 'Nom différent';
+		if (status === 'onlyInEba') return 'Uniquement EBA';
+		if (status === 'onlyInRegafi') return 'Uniquement REGAFI';
+		if (status === 'cityMismatch') return 'Ville différente';
+		return 'Catégorie différente';
+	}
+
+	function getStatusBadgeClass(status: ComparisonMatch['status']): string {
+		if (status === 'match') return 'bg-green-100 text-green-800';
+		if (status === 'nameMismatch') return 'bg-amber-100 text-amber-800';
+		if (status === 'onlyInEba' || status === 'onlyInRegafi') return 'bg-red-100 text-red-800';
+		return 'bg-gray-100 text-gray-700';
+	}
+
 	let error = $state<string | null>(null);
 
 	let ebaDatasetId = $state<string | null>(null);
@@ -225,64 +266,326 @@
 	let regafiFilterOptions = $state<Partial<Record<DatasetColumnKey, string[]>>>({});
 	let ebaOpenFilter = $state<DatasetColumnKey | null>(null);
 	let regafiOpenFilter = $state<DatasetColumnKey | null>(null);
-	let ebaFilterCloseTimer: ReturnType<typeof setTimeout> | null = null;
-	let regafiFilterCloseTimer: ReturnType<typeof setTimeout> | null = null;
+	let compareLoading = $state(false);
+	let compareOnSiren = $state(true);
+	let compareOnName = $state(true);
+	let nameSimilarityPercent = $state(80);
+	let compareLastSummary = $state<string | null>(null);
+	let ebaComparisonEntities = $state<NormalizedEntity[]>([]);
+	let regafiComparisonEntities = $state<NormalizedEntity[]>([]);
+	let comparisonMatches = $state<ComparisonMatch[]>([]);
+	let crossCheckLoading = $state(false);
+	let crossCheckDialogOpen = $state(false);
+	let crossCheckRows = $state<CrossCheckRow[]>([]);
+	let crossCheckSummary = $state<string | null>(null);
+	let crossCheckProgress = $state<string | null>(null);
+	let crossCheckCriteriaDialogOpen = $state(false);
+	let crossCheckCriteria = $state<CrossCheckCriteria>({ country: 'France' });
 
-	function clearFilterCloseTimer(kind: 'eba' | 'regafi') {
-		if (kind === 'eba') {
-			if (ebaFilterCloseTimer) {
-				clearTimeout(ebaFilterCloseTimer);
-				ebaFilterCloseTimer = null;
+	const compareModeActive = $derived(ebaComparisonEntities.length > 0 || regafiComparisonEntities.length > 0);
+	const displayEbaCount = $derived(compareModeActive ? ebaComparisonEntities.length : ebaCount);
+	const displayRegafiCount = $derived(compareModeActive ? regafiComparisonEntities.length : regafiCount);
+	const displayEbaItems = $derived(
+		compareModeActive
+			? ebaComparisonEntities.slice((ebaPage - 1) * PAGE_SIZE, ebaPage * PAGE_SIZE)
+			: ebaPageItems
+	);
+	const displayRegafiItems = $derived(
+		compareModeActive
+			? regafiComparisonEntities.slice((regafiPage - 1) * PAGE_SIZE, regafiPage * PAGE_SIZE)
+			: regafiPageItems
+	);
+
+	function clearComparisonMode() {
+		ebaComparisonEntities = [];
+		regafiComparisonEntities = [];
+		comparisonMatches = [];
+		compareLastSummary = null;
+		crossCheckDialogOpen = false;
+		crossCheckRows = [];
+		crossCheckSummary = null;
+		crossCheckProgress = null;
+		crossCheckCriteriaDialogOpen = false;
+	}
+
+	function clampNameSimilarity(raw: string): void {
+		const parsed = Number(raw);
+		if (!Number.isFinite(parsed)) return;
+		nameSimilarityPercent = Math.min(100, Math.max(0, Math.round(parsed)));
+	}
+
+	async function fetchEntities(
+		kind: DatasetKind,
+		useActiveFilters: boolean,
+		overrideTextFilters: Partial<Record<DatasetColumnKey, string>> = {},
+		overrideSelectFilters: Partial<Record<DatasetColumnKey, string[]>> = {},
+		onProgress?: (page: number, totalPages: number) => void
+	): Promise<NormalizedEntity[]> {
+		const datasetId = kind === 'eba' ? ebaDatasetId : regafiDatasetId;
+		if (!datasetId) return [];
+
+		const textFilters = useActiveFilters
+			? (kind === 'eba' ? ebaTextFilters : regafiTextFilters)
+			: overrideTextFilters;
+		const selectFilters = useActiveFilters
+			? (kind === 'eba' ? ebaSelectFilters : regafiSelectFilters)
+			: overrideSelectFilters;
+		const sortKey = kind === 'eba' ? ebaSortKey : regafiSortKey;
+		const sortDir = kind === 'eba' ? ebaSortDir : regafiSortDir;
+
+		let page = 1;
+		let totalPages = 1;
+		const all: NormalizedEntity[] = [];
+
+		while (page <= totalPages) {
+			const params = new URLSearchParams({
+				datasetId,
+				page: String(page),
+				pageSize: '100',
+				sortKey,
+				sortDir,
+				textFilters: toFilterParams(textFilters),
+				selectFilters: toFilterParams(selectFilters)
+			});
+
+			const response = await fetch(`/api/${kind}?${params}`);
+			const data = await response.json();
+			if (!data.success) {
+				throw new Error(data.error || `Erreur lors du chargement ${kind.toUpperCase()}`);
 			}
+
+			all.push(...(data.items ?? []));
+			totalPages = Number(data.totalPages ?? 1);
+			onProgress?.(page, totalPages);
+			page += 1;
+		}
+
+		return all;
+	}
+
+	function openCrossCheckCriteriaDialog() {
+		if (!compareModeActive || comparisonMatches.length === 0) {
+			error = 'Lancez d\'abord une comparaison filtrée.';
 			return;
 		}
 
-		if (regafiFilterCloseTimer) {
-			clearTimeout(regafiFilterCloseTimer);
-			regafiFilterCloseTimer = null;
+		crossCheckCriteriaDialogOpen = true;
+	}
+
+	async function compareDatasets(
+		regafi: NormalizedEntity[],
+		eba: NormalizedEntity[],
+		options: ComparisonOptions
+	): Promise<ComparisonResult> {
+		const response = await fetch('/api/compare', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ regafi, eba, options })
+		});
+
+		const data = await response.json();
+		if (!data.success) {
+			throw new Error(data.error || 'Erreur de comparaison');
+		}
+
+		return data as ComparisonResult;
+	}
+
+	async function runFilteredComparison() {
+		if (!ebaDatasetId || !regafiDatasetId) {
+			error = 'Veuillez charger les données EBA et REGAFI avant de comparer.';
+			return;
+		}
+
+		const columns: ComparisonOptions['columns'] = [];
+		if (compareOnSiren) columns.push('siren');
+		if (compareOnName) columns.push('denomination');
+
+		if (columns.length === 0) {
+			error = 'Sélectionnez au moins une colonne de comparaison.';
+			return;
+		}
+
+		compareLoading = true;
+		error = null;
+
+		try {
+			const [ebaFiltered, regafiFiltered] = await Promise.all([
+				fetchEntities('eba', true),
+				fetchEntities('regafi', true)
+			]);
+
+			const data = await compareDatasets(regafiFiltered, ebaFiltered, {
+				columns,
+				nameSimilarityThreshold: nameSimilarityPercent / 100
+			});
+
+			comparisonMatches = data.matches ?? [];
+			ebaComparisonEntities = sortEntities(
+				comparisonMatches
+					.filter((match) => match.status !== 'match' && match.eba)
+					.map((match) => match.eba as NormalizedEntity),
+				ebaSortKey,
+				ebaSortDir
+			);
+			regafiComparisonEntities = sortEntities(
+				comparisonMatches
+					.filter((match) => match.status !== 'match' && match.regafi)
+					.map((match) => match.regafi as NormalizedEntity),
+				regafiSortKey,
+				regafiSortDir
+			);
+
+			ebaPage = 1;
+			regafiPage = 1;
+			compareLastSummary = `${data.summary?.totalMatches ?? 0} sociétés identiques, ${regafiComparisonEntities.length} REGAFI et ${ebaComparisonEntities.length} EBA à investiguer.`;
+		} catch (runError) {
+			clearComparisonMode();
+			error = runError instanceof Error ? runError.message : 'Erreur de comparaison inconnue';
+		} finally {
+			compareLoading = false;
 		}
 	}
 
-	function scheduleFilterClose(kind: 'eba' | 'regafi', key: DatasetColumnKey) {
-		clearFilterCloseTimer(kind);
-		const timer = setTimeout(() => {
-			if (kind === 'eba') {
-				if (ebaOpenFilter === key) ebaOpenFilter = null;
-				ebaFilterCloseTimer = null;
-				return;
-			}
+	async function runCrossCheckAgainstFullLists() {
+		if (!compareModeActive || comparisonMatches.length === 0) {
+			error = 'Lancez d\'abord une comparaison filtrée.';
+			return;
+		}
 
-			if (regafiOpenFilter === key) regafiOpenFilter = null;
-			regafiFilterCloseTimer = null;
-		}, 3000);
+		const columns: ComparisonOptions['columns'] = [];
+		if (compareOnSiren) columns.push('siren');
+		if (compareOnName) columns.push('denomination');
 
-		if (kind === 'eba') {
-			ebaFilterCloseTimer = timer;
-		} else {
-			regafiFilterCloseTimer = timer;
+		if (columns.length === 0) {
+			error = 'Sélectionnez au moins une colonne de comparaison.';
+			return;
+		}
+
+		const onlyInEba = comparisonMatches
+			.filter((match) => match.status === 'onlyInEba' && match.eba)
+			.map((match) => match.eba as NormalizedEntity);
+		const onlyInRegafi = comparisonMatches
+			.filter((match) => match.status === 'onlyInRegafi' && match.regafi)
+			.map((match) => match.regafi as NormalizedEntity);
+
+		if (onlyInEba.length === 0 && onlyInRegafi.length === 0) {
+			crossCheckRows = [];
+			crossCheckSummary = 'Aucune société uniquement présente dans une table à re-vérifier.';
+			crossCheckProgress = null;
+			crossCheckDialogOpen = true;
+			return;
+		}
+
+		crossCheckLoading = true;
+		crossCheckDialogOpen = true;
+		crossCheckCriteriaDialogOpen = false;
+		crossCheckRows = [];
+		crossCheckSummary = null;
+		crossCheckProgress = 'Préparation de la re-vérification...';
+		error = null;
+
+		try {
+			const countryFilter = crossCheckCriteria.country.trim();
+			const textFilter = countryFilter ? { pays: countryFilter } : {};
+			const [fullRegafi, fullEba] = await Promise.all([
+				fetchEntities('regafi', false, textFilter, {}, (page, totalPages) => {
+					crossCheckProgress = `Chargement REGAFI (${countryFilter || 'sans filtre pays'}): page ${page}/${totalPages}`;
+				}),
+				fetchEntities('eba', false, textFilter, {}, (page, totalPages) => {
+					crossCheckProgress = `Chargement EBA (${countryFilter || 'sans filtre pays'}): page ${page}/${totalPages}`;
+				})
+			]);
+
+			crossCheckProgress = 'Recherche des sociétés correspondantes dans les listes complètes...';
+
+			const [ebaCheck, regafiCheck] = await Promise.all([
+				onlyInEba.length > 0
+					? compareDatasets(fullRegafi, onlyInEba, {
+						columns,
+						nameSimilarityThreshold: nameSimilarityPercent / 100
+					})
+					: Promise.resolve({ matches: [], summary: {
+						totalMatches: 0,
+						totalNameMismatches: 0,
+						totalCityMismatches: 0,
+						totalCategoryMismatches: 0,
+						totalOnlyInRegafi: 0,
+						totalOnlyInEba: 0,
+						totalRegafi: 0,
+						totalEba: 0
+					} } as ComparisonResult),
+				onlyInRegafi.length > 0
+					? compareDatasets(onlyInRegafi, fullEba, {
+						columns,
+						nameSimilarityThreshold: nameSimilarityPercent / 100
+					})
+					: Promise.resolve({ matches: [], summary: {
+						totalMatches: 0,
+						totalNameMismatches: 0,
+						totalCityMismatches: 0,
+						totalCategoryMismatches: 0,
+						totalOnlyInRegafi: 0,
+						totalOnlyInEba: 0,
+						totalRegafi: 0,
+						totalEba: 0
+					} } as ComparisonResult)
+			]);
+
+			const foundFromEba = ebaCheck.matches
+				.filter((match) => match.eba && match.status !== 'onlyInEba')
+				.map((match) => ({
+					origin: 'onlyInEba' as const,
+					status: match.status,
+					siren: match.siren,
+					sourceName: match.eba?.denomination || '-',
+					oppositeName: match.regafi?.denomination || '-',
+					sourceCity: match.eba?.ville || '-',
+					oppositeCity: match.regafi?.ville || '-'
+				}));
+
+			const foundFromRegafi = regafiCheck.matches
+				.filter((match) => match.regafi && match.status !== 'onlyInRegafi')
+				.map((match) => ({
+					origin: 'onlyInRegafi' as const,
+					status: match.status,
+					siren: match.siren,
+					sourceName: match.regafi?.denomination || '-',
+					oppositeName: match.eba?.denomination || '-',
+					sourceCity: match.regafi?.ville || '-',
+					oppositeCity: match.eba?.ville || '-'
+				}));
+
+			crossCheckRows = [...foundFromEba, ...foundFromRegafi].sort((left, right) =>
+				left.siren.localeCompare(right.siren, 'fr', { sensitivity: 'base' })
+			);
+			crossCheckSummary = `${crossCheckRows.length} société(s) retrouvée(s) dans les listes complètes opposées.`;
+			crossCheckProgress = null;
+			crossCheckDialogOpen = true;
+		} catch (runError) {
+			crossCheckProgress = null;
+			error = runError instanceof Error ? runError.message : 'Erreur de re-vérification inconnue';
+		} finally {
+			crossCheckLoading = false;
 		}
 	}
 
 	function toggleFilterDropdown(kind: 'eba' | 'regafi', key: DatasetColumnKey) {
 		if (kind === 'eba') {
 			ebaOpenFilter = ebaOpenFilter === key ? null : key;
-			scheduleFilterClose(kind, key);
 			return;
 		}
 
 		regafiOpenFilter = regafiOpenFilter === key ? null : key;
-		scheduleFilterClose(kind, key);
 	}
 
 	function closeFilterDropdown(kind: 'eba' | 'regafi') {
 		if (kind === 'eba') {
 			ebaOpenFilter = null;
-			clearFilterCloseTimer(kind);
 			return;
 		}
 
 		regafiOpenFilter = null;
-		clearFilterCloseTimer(kind);
 	}
 
 	onMount(() => {
@@ -302,6 +605,7 @@
 
 	async function loadEbaPage() {
 		if (!ebaDatasetId) return;
+		clearComparisonMode();
 		ebaLoading = true;
 		try {
 			const params = new URLSearchParams({
@@ -327,6 +631,7 @@
 
 	async function loadRegafiPage() {
 		if (!regafiDatasetId) return;
+		clearComparisonMode();
 		regafiLoading = true;
 		try {
 			const params = new URLSearchParams({
@@ -351,6 +656,7 @@
 	}
 
 	async function onEbaLoaded(payload: { datasetId: string; count: number; sortKey: 'siren' }) {
+		clearComparisonMode();
 		ebaDatasetId = payload.datasetId;
 		ebaCount = payload.count;
 		ebaSortKey = payload.sortKey;
@@ -360,6 +666,7 @@
 	}
 
 	async function onRegafiLoaded(payload: { datasetId: string; count: number; sortKey: 'siren' }) {
+		clearComparisonMode();
 		regafiDatasetId = payload.datasetId;
 		regafiCount = payload.count;
 		regafiSortKey = payload.sortKey;
@@ -369,6 +676,7 @@
 	}
 
 	function resetAll() {
+		clearComparisonMode();
 		ebaDatasetId = null;
 		regafiDatasetId = null;
 		ebaCount = 0;
@@ -390,8 +698,8 @@
 		regafiFilterOptions = {};
 	}
 
-	const ebaTotalPages = $derived(Math.max(1, Math.ceil(ebaCount / PAGE_SIZE)));
-	const regafiTotalPages = $derived(Math.max(1, Math.ceil(regafiCount / PAGE_SIZE)));
+	const ebaTotalPages = $derived(Math.max(1, Math.ceil(displayEbaCount / PAGE_SIZE)));
+	const regafiTotalPages = $derived(Math.max(1, Math.ceil(displayRegafiCount / PAGE_SIZE)));
 
 	onMount(() => {
 		if (!ebaDatasetId) void loadLatestEba();
@@ -399,6 +707,7 @@
 	});
 
 	async function loadLatestEba() {
+		clearComparisonMode();
 		ebaLoading = true;
 		try {
 			const params = new URLSearchParams({
@@ -424,6 +733,7 @@
 	}
 
 	async function loadLatestRegafi() {
+		clearComparisonMode();
 		regafiLoading = true;
 		try {
 			const params = new URLSearchParams({
@@ -452,6 +762,10 @@
 		ebaSortKey = columnKey;
 		ebaSortDir = direction;
 		ebaPage = 1;
+		if (compareModeActive) {
+			ebaComparisonEntities = sortEntities(ebaComparisonEntities, ebaSortKey, ebaSortDir);
+			return;
+		}
 		void loadEbaPage();
 	}
 
@@ -459,65 +773,71 @@
 		regafiSortKey = columnKey;
 		regafiSortDir = direction;
 		regafiPage = 1;
+		if (compareModeActive) {
+			regafiComparisonEntities = sortEntities(regafiComparisonEntities, regafiSortKey, regafiSortDir);
+			return;
+		}
 		void loadRegafiPage();
 	}
 
 	function onEbaTextFilterChange(key: DatasetColumnKey, value: string) {
+		clearComparisonMode();
 		ebaTextFilters = { ...ebaTextFilters, [key]: value };
 		ebaPage = 1;
 		void loadEbaPage();
 	}
 
 	function onRegafiTextFilterChange(key: DatasetColumnKey, value: string) {
+		clearComparisonMode();
 		regafiTextFilters = { ...regafiTextFilters, [key]: value };
 		regafiPage = 1;
 		void loadRegafiPage();
 	}
 
 	function onEbaSelectFilterToggle(key: DatasetColumnKey, value: string) {
+		clearComparisonMode();
 		const current = ebaSelectFilters[key] ?? [];
 		const next = toggleSelectValue(current, value);
 		ebaSelectFilters = { ...ebaSelectFilters, [key]: next };
 		ebaPage = 1;
 		void loadEbaPage();
-		scheduleFilterClose('eba', key);
 	}
 
 	function onRegafiSelectFilterToggle(key: DatasetColumnKey, value: string) {
+		clearComparisonMode();
 		const current = regafiSelectFilters[key] ?? [];
 		const next = toggleSelectValue(current, value);
 		regafiSelectFilters = { ...regafiSelectFilters, [key]: next };
 		regafiPage = 1;
 		void loadRegafiPage();
-		scheduleFilterClose('regafi', key);
 	}
 
 	function onEbaSelectFilterClear(key: DatasetColumnKey) {
+		clearComparisonMode();
 		ebaSelectFilters = { ...ebaSelectFilters, [key]: [] };
 		ebaPage = 1;
 		void loadEbaPage();
-		scheduleFilterClose('eba', key);
 	}
 
 	function onRegafiSelectFilterClear(key: DatasetColumnKey) {
+		clearComparisonMode();
 		regafiSelectFilters = { ...regafiSelectFilters, [key]: [] };
 		regafiPage = 1;
 		void loadRegafiPage();
-		scheduleFilterClose('regafi', key);
 	}
 
 	function onEbaSelectFilterAll(key: DatasetColumnKey, column: TableColumn) {
+		clearComparisonMode();
 		ebaSelectFilters = { ...ebaSelectFilters, [key]: setAllSelectValues(column, ebaFilterOptions) };
 		ebaPage = 1;
 		void loadEbaPage();
-		scheduleFilterClose('eba', key);
 	}
 
 	function onRegafiSelectFilterAll(key: DatasetColumnKey, column: TableColumn) {
+		clearComparisonMode();
 		regafiSelectFilters = { ...regafiSelectFilters, [key]: setAllSelectValues(column, regafiFilterOptions) };
 		regafiPage = 1;
 		void loadRegafiPage();
-		scheduleFilterClose('regafi', key);
 	}
 
 </script>
@@ -533,10 +853,72 @@
 	</div> -->
 
 	<div class="grid grid-cols-1 gap-6">
+		<section class="bg-white rounded-lg border border-gray-200 p-4">
+			<div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+				<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+					<label class="inline-flex items-center gap-2 text-sm text-gray-700">
+						<input type="checkbox" class="h-4 w-4" bind:checked={compareOnSiren} />
+						<span>Comparer le SIREN</span>
+					</label>
+					<label class="inline-flex items-center gap-2 text-sm text-gray-700">
+						<input type="checkbox" class="h-4 w-4" bind:checked={compareOnName} />
+						<span>Comparer la dénomination</span>
+					</label>
+					<label class="flex items-center gap-2 text-sm text-gray-700">
+						<span>Seuil nom (%)</span>
+						<input
+							type="number"
+							min="0"
+							max="100"
+							class="w-20 rounded border border-gray-300 px-2 py-1 text-sm"
+							value={nameSimilarityPercent}
+							oninput={(event) => clampNameSimilarity((event.currentTarget as HTMLInputElement).value)}
+						/>
+					</label>
+				</div>
+				<div class="flex items-center gap-2">
+					<button
+						type="button"
+						class="rounded bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-40"
+						onclick={runFilteredComparison}
+						disabled={compareLoading || !ebaDatasetId || !regafiDatasetId}
+					>
+						{compareLoading ? 'Comparaison en cours...' : 'Comparer les filtres actifs'}
+					</button>
+					<button
+						type="button"
+						class="rounded border border-blue-300 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-40"
+						onclick={openCrossCheckCriteriaDialog}
+						disabled={crossCheckLoading || !compareModeActive}
+					>
+						{crossCheckLoading ? 'Recherche...' : 'Rechercher dans les listes complètes'}
+					</button>
+					{#if compareModeActive}
+						<button
+							type="button"
+							class="rounded border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+							onclick={clearComparisonMode}
+						>
+							Retour aux tables filtrées
+						</button>
+					{/if}
+				</div>
+			</div>
+			{#if compareLastSummary}
+				<p class="mt-3 text-sm text-gray-600">{compareLastSummary}</p>
+			{/if}
+			{#if compareModeActive}
+				<p class="mt-1 text-xs text-gray-500">Mode comparaison: seules les sociétés non identiques entre les filtres EBA/REGAFI sont affichées.</p>
+			{/if}
+			{#if crossCheckSummary}
+				<p class="mt-1 text-xs text-blue-700">{crossCheckSummary}</p>
+			{/if}
+		</section>
+
 		<section class="bg-white rounded-lg border border-gray-200 p-6">
 			<div class="border border-gray-200 rounded-lg overflow-hidden">
 				<div class="bg-blue-50 px-4 py-3 border-b border-gray-200 flex items-center justify-between gap-4">
-					<h3 class="text-base font-semibold text-blue-800">EBA ({ebaCount})</h3>
+					<h3 class="text-base font-semibold text-blue-800">EBA ({displayEbaCount})</h3>
 					<EbaUpload onLoaded={onEbaLoaded} />
 				</div>
 
@@ -633,7 +1015,7 @@
 								</tr>
 							</thead>
 							<tbody class="divide-y divide-gray-100">
-								{#each ebaPageItems as entity}
+								{#each displayEbaItems as entity}
 									<tr class="hover:bg-gray-50">
 										{#each EBA_COLUMNS as column}
 											<td class={`px-4 py-3 ${column.widthClass || ''} ${column.cellClass || ''}`}>
@@ -646,11 +1028,11 @@
 						</table>
 					</div>
 					<div class="flex items-center justify-between px-4 py-3 bg-gray-50 border-t border-gray-200 text-sm text-gray-500">
-						<button class="disabled:opacity-30" disabled={ebaPage <= 1} onclick={() => { ebaPage = Math.max(1, ebaPage - 1); void loadEbaPage(); }}>
+						<button class="disabled:opacity-30" disabled={ebaPage <= 1} onclick={() => { ebaPage = Math.max(1, ebaPage - 1); if (!compareModeActive) void loadEbaPage(); }}>
 							← Préc.
 						</button>
 						<span>Page {ebaPage} / {ebaTotalPages}</span>
-						<button class="disabled:opacity-30" disabled={ebaPage >= ebaTotalPages} onclick={() => { ebaPage = Math.min(ebaTotalPages, ebaPage + 1); void loadEbaPage(); }}>
+						<button class="disabled:opacity-30" disabled={ebaPage >= ebaTotalPages} onclick={() => { ebaPage = Math.min(ebaTotalPages, ebaPage + 1); if (!compareModeActive) void loadEbaPage(); }}>
 							Suiv. →
 						</button>
 					</div>
@@ -661,7 +1043,7 @@
 		<section class="bg-white rounded-lg border border-gray-200 p-6">
 			<div class="border border-gray-200 rounded-lg overflow-hidden">
 				<div class="bg-red-50 px-4 py-3 border-b border-gray-200 flex items-center justify-between gap-4">
-					<h3 class="text-base font-semibold text-red-800">REGAFI ({regafiCount})</h3>
+					<h3 class="text-base font-semibold text-red-800">REGAFI ({displayRegafiCount})</h3>
 					<RegafiUpload onLoaded={onRegafiLoaded} />
 				</div>
 
@@ -758,7 +1140,7 @@
 								</tr>
 							</thead>
 							<tbody class="divide-y divide-gray-100">
-								{#each regafiPageItems as entity}
+								{#each displayRegafiItems as entity}
 									<tr class="hover:bg-gray-50">
 										{#each REGAFI_COLUMNS as column}
 											<td class={`px-4 py-3 ${column.widthClass || ''} ${column.cellClass || ''}`}>
@@ -771,11 +1153,11 @@
 						</table>
 					</div>
 					<div class="flex items-center justify-between px-4 py-3 bg-gray-50 border-t border-gray-200 text-sm text-gray-500">
-						<button class="disabled:opacity-30" disabled={regafiPage <= 1} onclick={() => { regafiPage = Math.max(1, regafiPage - 1); void loadRegafiPage(); }}>
+						<button class="disabled:opacity-30" disabled={regafiPage <= 1} onclick={() => { regafiPage = Math.max(1, regafiPage - 1); if (!compareModeActive) void loadRegafiPage(); }}>
 							← Préc.
 						</button>
 						<span>Page {regafiPage} / {regafiTotalPages}</span>
-						<button class="disabled:opacity-30" disabled={regafiPage >= regafiTotalPages} onclick={() => { regafiPage = Math.min(regafiTotalPages, regafiPage + 1); void loadRegafiPage(); }}>
+						<button class="disabled:opacity-30" disabled={regafiPage >= regafiTotalPages} onclick={() => { regafiPage = Math.min(regafiTotalPages, regafiPage + 1); if (!compareModeActive) void loadRegafiPage(); }}>
 							Suiv. →
 						</button>
 					</div>
@@ -790,3 +1172,107 @@
 		</div>
 	{/if}
 </div>
+
+{#if crossCheckDialogOpen}
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+		<div class="w-full max-w-6xl rounded-lg bg-white shadow-2xl">
+			<div class="flex items-center justify-between border-b border-gray-200 px-5 py-3">
+				<div>
+					<h3 class="text-lg font-semibold text-gray-900">Sociétés retrouvées dans la liste complète opposée</h3>
+					<p class="text-xs text-gray-500">Résultats de re-vérification des sociétés initialement marquées comme uniques.</p>
+				</div>
+				<button
+					type="button"
+					class="rounded border border-gray-300 px-3 py-1 text-sm text-gray-700 hover:bg-gray-50"
+					onclick={() => { crossCheckDialogOpen = false; }}
+				>
+					Fermer
+				</button>
+			</div>
+
+			<div class="max-h-[70vh] overflow-auto px-5 py-4">
+				{#if crossCheckLoading}
+					<div class="py-10 text-center">
+						<div class="mx-auto mb-3 h-7 w-7 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600"></div>
+						<p class="text-sm text-gray-700">Recherche en cours...</p>
+						{#if crossCheckProgress}
+							<p class="mt-1 text-xs text-gray-500">{crossCheckProgress}</p>
+						{/if}
+					</div>
+				{:else if crossCheckRows.length === 0}
+					<p class="py-8 text-center text-sm text-gray-500">Aucune société n'a été retrouvée dans la liste complète opposée.</p>
+				{:else}
+					<table class="w-full table-fixed text-sm">
+						<thead class="sticky top-0 bg-gray-50">
+							<tr>
+								<th class="px-3 py-2 text-left font-medium text-gray-500">Origine</th>
+								<th class="px-3 py-2 text-left font-medium text-gray-500">Statut</th>
+								<th class="px-3 py-2 text-left font-medium text-gray-500">SIREN</th>
+								<th class="px-3 py-2 text-left font-medium text-gray-500">Société initiale</th>
+								<th class="px-3 py-2 text-left font-medium text-gray-500">Trouvée dans liste complète</th>
+								<th class="px-3 py-2 text-left font-medium text-gray-500">Ville initiale</th>
+								<th class="px-3 py-2 text-left font-medium text-gray-500">Ville opposée</th>
+							</tr>
+						</thead>
+						<tbody class="divide-y divide-gray-100">
+							{#each crossCheckRows as row}
+								<tr class="hover:bg-gray-50">
+									<td class="px-3 py-2 text-xs text-gray-600">{row.origin === 'onlyInEba' ? 'Uniquement EBA' : 'Uniquement REGAFI'}</td>
+									<td class="px-3 py-2">
+										<span class={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${getStatusBadgeClass(row.status)}`}>
+											{getStatusLabel(row.status)}
+										</span>
+									</td>
+									<td class="px-3 py-2 font-mono text-xs">{row.siren || '-'}</td>
+									<td class="px-3 py-2">{row.sourceName}</td>
+									<td class="px-3 py-2">{row.oppositeName}</td>
+									<td class="px-3 py-2">{row.sourceCity}</td>
+									<td class="px-3 py-2">{row.oppositeCity}</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				{/if}
+			</div>
+		</div>
+	</div>
+{/if}
+
+{#if crossCheckCriteriaDialogOpen}
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+		<div class="w-full max-w-lg rounded-lg bg-white p-5 shadow-2xl">
+			<h3 class="text-lg font-semibold text-gray-900">Filtrer la recherche dans les listes complètes</h3>
+			<p class="mt-1 text-sm text-gray-600">Réduisez le périmètre pour accélérer la recherche des sociétés opposées.</p>
+
+			<div class="mt-4 space-y-3">
+				<label class="block text-sm text-gray-700">
+					<span class="mb-1 block font-medium">Pays (opposé)</span>
+					<input
+						type="text"
+						class="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+						placeholder="Ex: France"
+						bind:value={crossCheckCriteria.country}
+					/>
+				</label>
+				<p class="text-xs text-gray-500">Laisser vide pour rechercher dans tous les pays.</p>
+			</div>
+
+			<div class="mt-5 flex items-center justify-end gap-2">
+				<button
+					type="button"
+					class="rounded border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+					onclick={() => { crossCheckCriteriaDialogOpen = false; }}
+				>
+					Annuler
+				</button>
+				<button
+					type="button"
+					class="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+					onclick={runCrossCheckAgainstFullLists}
+				>
+					Lancer la recherche
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}
