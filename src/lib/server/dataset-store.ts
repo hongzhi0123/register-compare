@@ -174,20 +174,18 @@ function getEntityValuesForKey(entity: NormalizedEntity, key: DatasetColumnKey):
 	return value ? [value] : [];
 }
 
-function hasRoleCountryAndRoleMatch(entity: NormalizedEntity, countries: string[], roles: string[]): boolean {
-	if (countries.length === 0 || roles.length === 0) return true;
-	const countrySet = new Set(countries.map((value) => value.trim().toLowerCase()).filter(Boolean));
-	const roleSet = new Set(roles.map((value) => value.trim().toLowerCase()).filter(Boolean));
-	if (countrySet.size === 0 || roleSet.size === 0) return true;
+function matchesSelectValues(values: string[], selected: string[]): boolean {
+	const normalizedSelected = selected.map((value) => value.trim().toLowerCase()).filter(Boolean);
+	if (normalizedSelected.length === 0 || normalizedSelected.includes('__all__')) return true;
 
-	for (const pair of getRoleCountryAndNamePairs(entity)) {
-		const country = pair.country.trim().toLowerCase();
-		const role = pair.role.trim().toLowerCase();
-		if (countrySet.has(country) && roleSet.has(role)) {
-			return true;
-		}
-	}
+	const hasEmpty = normalizedSelected.includes('__empty__');
+	const hasNonEmpty = normalizedSelected.includes('__non_empty__');
+	const exactValues = normalizedSelected.filter((value) => value !== '__empty__' && value !== '__non_empty__');
+	const normalizedValues = values.map((value) => value.trim().toLowerCase()).filter(Boolean);
 
+	if (exactValues.some((value) => normalizedValues.includes(value))) return true;
+	if (normalizedValues.length === 0) return hasEmpty;
+	if (normalizedValues.length > 0 && hasNonEmpty) return true;
 	return false;
 }
 
@@ -259,25 +257,22 @@ export async function getDatasetPage(
 
 	const selectedCountries = params.selectFilters.rolesCountry ?? [];
 	const selectedRoles = params.selectFilters.rolesName ?? [];
-	filtered = filtered.filter((entity) => hasRoleCountryAndRoleMatch(entity, selectedCountries, selectedRoles));
+	filtered = filtered.filter((entity) => {
+		const countryValues = getEntityValuesForKey(entity, 'rolesCountry');
+		const roleValues = getEntityValuesForKey(entity, 'rolesName');
+		return matchesSelectValues(countryValues, selectedCountries) && matchesSelectValues(roleValues, selectedRoles);
+	});
 
 	progress?.running(84, 'Application des filtres de sélection...');
 	for (const [rawKey, rawValue] of Object.entries(params.selectFilters)) {
 		const key = rawKey as DatasetColumnKey;
 		if (key === 'rolesCountry' || key === 'rolesName') continue;
-		const selectedValues = (rawValue || []).map((value) => value.trim().toLowerCase()).filter(Boolean);
-		if (selectedValues.length === 0 || selectedValues.includes('__all__')) continue;
-
-		const hasEmpty = selectedValues.includes('__empty__');
-		const hasNonEmpty = selectedValues.includes('__non_empty__');
-		const exactValues = selectedValues.filter((value) => value !== '__empty__' && value !== '__non_empty__');
+		const selectedValues = rawValue || [];
+		if (selectedValues.length === 0) continue;
 
 		filtered = filtered.filter((entity) => {
-			const values = getEntityValuesForKey(entity, key).map((value) => value.toLowerCase());
-			if (exactValues.some((value) => values.includes(value))) return true;
-			if (values.length === 0) return hasEmpty;
-			if (values.length > 0 && hasNonEmpty) return true;
-			return false;
+			const values = getEntityValuesForKey(entity, key);
+			return matchesSelectValues(values, selectedValues);
 		});
 	}
 

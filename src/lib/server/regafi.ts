@@ -7,9 +7,11 @@ const PSD2_ROLE_LABELS: Record<string, string> = {
 	'4': 'Exécution d\'opérations de paiement avec crédit',
 	'5': 'Émission d\'instruments de paiement',
 	'6': 'Transmission de fonds',
-	'7': 'Initiation de paiement',
-	'8': 'Information sur les comptes'
+	'7': 'PSP_PI',
+	'8': 'PSP_AI'
 };
+
+const ALLOWED_ROLE_CODES = new Set(['7', '8']);
 
 const REGAFI_BASE = 'https://developer.regafi.banque-france.fr/api/explore/v2.1';
 const DATASET = 'catalogue-banque';
@@ -39,12 +41,14 @@ function extractRoleCodes(value: unknown): string[] {
 
 	if (typeof value === 'number') {
 		const code = String(value);
-		return /^\d+$/.test(code) ? [code] : [];
+		return /^\d+$/.test(code) && ALLOWED_ROLE_CODES.has(code) ? [code] : [];
 	}
 
 	if (typeof value === 'string') {
 		const matches = value.match(/\b([1-8])\b/g);
-		return matches ? Array.from(new Set(matches)) : [];
+		if (!matches) return [];
+		const filtered = matches.filter((code) => ALLOWED_ROLE_CODES.has(code));
+		return filtered.length ? Array.from(new Set(filtered)) : [];
 	}
 
 	if (Array.isArray(value)) {
@@ -58,6 +62,50 @@ function extractRoleCodes(value: unknown): string[] {
 	return [];
 }
 
+function extractRowRoleCodes(row: Record<string, unknown>): string[] {
+	const roleCodes = new Set<string>();
+
+	for (const value of Object.values(row)) {
+		for (const code of extractRoleCodes(value)) {
+			roleCodes.add(code);
+		}
+	}
+
+	const servicePayments = row.services_paiement_json;
+	if (servicePayments && typeof servicePayments === 'object' && !Array.isArray(servicePayments)) {
+		for (const [serviceCode, serviceValue] of Object.entries(servicePayments as Record<string, unknown>)) {
+			const normalizedServiceCode = serviceCode.match(/[1-8]/)?.[0];
+			if (!normalizedServiceCode) continue;
+			if (!ALLOWED_ROLE_CODES.has(normalizedServiceCode)) continue;
+
+			if (serviceValue === true) {
+				roleCodes.add(normalizedServiceCode);
+				continue;
+			}
+
+			if (serviceValue && typeof serviceValue === 'object' && (serviceValue as Record<string, unknown>).value === true) {
+				roleCodes.add(normalizedServiceCode);
+			}
+		}
+	}
+
+	return Array.from(roleCodes);
+}
+
+function asRegafiRows(value: unknown): unknown[] {
+	if (Array.isArray(value)) return value;
+	if (!value || typeof value !== 'object') return [value];
+
+	const entries = Object.values(value);
+	if (	entries.length > 0 &&
+		entries.every((entry) => entry && typeof entry === 'object' && !Array.isArray(entry))
+	) {
+		return entries;
+	}
+
+	return [value];
+}
+
 function tryParseJson(value: string): unknown {
 	try {
 		return JSON.parse(value);
@@ -66,8 +114,14 @@ function tryParseJson(value: string): unknown {
 	}
 }
 
-function extractRegafiRolesByCountry(authorisations: unknown, defaultCountry: string | null) {
-	const parsed = typeof authorisations === 'string' ? tryParseJson(authorisations) : authorisations;
+function extractRegafiRolesByCountry(
+	authorisations: unknown,
+	passportsSortants: unknown,
+	defaultCountry: string | null
+) {
+	const parsedAuthorisations = typeof authorisations === 'string' ? tryParseJson(authorisations) : authorisations;
+	const parsedPassportsSortants =
+		typeof passportsSortants === 'string' ? tryParseJson(passportsSortants) : passportsSortants;
 	const byCountry = new Map<string, Set<string>>();
 
 	const addRoles = (country: string | null, roleCodes: string[]) => {
@@ -80,12 +134,12 @@ function extractRegafiRolesByCountry(authorisations: unknown, defaultCountry: st
 		}
 	};
 
-	if (Array.isArray(parsed)) {
-		for (const item of parsed) {
+	const addFromAuthorisations = (parsed: unknown) => {
+		for (const item of asRegafiRows(parsed)) {
 			if (!item || typeof item !== 'object') {
-				addRoles(defaultCountry, extractRoleCodes(item));
-				continue;
-			}
+					addRoles(defaultCountry, extractRoleCodes(item));
+					continue;
+				}
 
 			const row = item as Record<string, unknown>;
 			const country =
@@ -96,21 +150,34 @@ function extractRegafiRolesByCountry(authorisations: unknown, defaultCountry: st
 						: typeof row.Country === 'string'
 							? row.Country
 							: defaultCountry;
-			const rowRoleCodes = new Set<string>();
-			for (const value of Object.values(row)) {
-				for (const code of extractRoleCodes(value)) {
-					rowRoleCodes.add(code);
-				}
+			addRoles(country, extractRowRoleCodes(row));
+		}
+	};
+
+	const addFromPassportsSortants = (parsed: unknown) => {
+		for (const item of asRegafiRows(parsed)) {
+			if (!item || typeof item !== 'object') {
+				continue;
 			}
 
-			addRoles(country, Array.from(rowRoleCodes));
+			const row = item as Record<string, unknown>;
+			const country =
+				typeof row.pays_exercice === 'string'
+					? row.pays_exercice
+					: typeof row.pays === 'string'
+						? row.pays
+						: typeof row.country === 'string'
+							? row.country
+							: typeof row.Country === 'string'
+								? row.Country
+								: defaultCountry;
+
+			addRoles(country, extractRowRoleCodes(row));
 		}
-	} else if (parsed && typeof parsed === 'object') {
-		const roleCodes = extractRoleCodes(parsed);
-		addRoles(defaultCountry, roleCodes);
-	} else {
-		addRoles(defaultCountry, extractRoleCodes(parsed));
-	}
+	};
+
+	addFromAuthorisations(parsedAuthorisations);
+	addFromPassportsSortants(parsedPassportsSortants);
 
 	return Array.from(byCountry.entries())
 		.map(([countryCode, roleCodes]) => ({
@@ -195,7 +262,11 @@ export function keepFrenchEntities(entities: NormalizedEntity[]): NormalizedEnti
 
 export function normalizeRegafiEntity(record: RegafiRecord): NormalizedEntity {
 	const f = record.fields;
-	const rolesByCountry = extractRegafiRolesByCountry(f?.authorisations, f?.pays || null);
+	const rolesByCountry = extractRegafiRolesByCountry(
+		f?.authorisations,
+		f?.passports_sortants,
+		f?.pays || null
+	);
 	return {
 		siren: f?.siren || '',
 		denomination: f?.denomination || '(sans nom)',
@@ -213,7 +284,11 @@ export function normalizeRegafiEntity(record: RegafiRecord): NormalizedEntity {
 
 export function normalizeFlatEntity(record: Record<string, unknown>): NormalizedEntity {
 	const country = record.pays ? String(record.pays) : null;
-	const rolesByCountry = extractRegafiRolesByCountry(record.authorisations, country);
+	const rolesByCountry = extractRegafiRolesByCountry(
+		record.authorisations,
+		record.passports_sortants,
+		country
+	);
 	return {
 		siren: String(record.siren || ''),
 		denomination: String(record.denomination || record.denomination || '(sans nom)'),
