@@ -238,6 +238,51 @@
 		return 'bg-gray-100 text-gray-700';
 	}
 
+	function escapeCsv(value: string | null | undefined): string {
+		const normalized = value ?? '';
+		const escaped = normalized.replace(/"/g, '""');
+		return `"${escaped}"`;
+	}
+
+	async function exportDatasetTableToCsv(kind: DatasetKind): Promise<void> {
+		const columns = kind === 'eba' ? EBA_COLUMNS : REGAFI_COLUMNS;
+		const isEba = kind === 'eba';
+		const setLoading = isEba ? (value: boolean) => (ebaExportLoading = value) : (value: boolean) => (regafiExportLoading = value);
+
+		setLoading(true);
+		try {
+			const items = compareModeActive
+				? (isEba ? ebaComparisonEntities : regafiComparisonEntities)
+				: await fetchEntities(kind, true);
+
+			if (items.length === 0) return;
+
+			const header = columns.map((column) => escapeCsv(column.label)).join(',');
+			const rows = items.map((entity) =>
+				columns
+					.map((column) => {
+						const raw = entity[column.key];
+						return escapeCsv(raw === null || raw === undefined ? '' : String(raw));
+					})
+					.join(',')
+			);
+
+			const csvContent = [header, ...rows].join('\n');
+			const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+			const url = URL.createObjectURL(blob);
+			const link = document.createElement('a');
+			const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+			link.href = url;
+			link.download = `${kind}-${compareModeActive ? 'comparison' : 'filtered'}-${timestamp}.csv`;
+			document.body.appendChild(link);
+			link.click();
+			document.body.removeChild(link);
+			URL.revokeObjectURL(url);
+		} finally {
+			setLoading(false);
+		}
+	}
+
 	let error = $state<string | null>(null);
 
 	let ebaDatasetId = $state<string | null>(null);
@@ -248,8 +293,12 @@
 	let regafiPageItems = $state<NormalizedEntity[]>([]);
 	let ebaLoading = $state(false);
 	let regafiLoading = $state(false);
+	let ebaExportLoading = $state(false);
+	let regafiExportLoading = $state(false);
 	let ebaLoadingMessage = $state<string | null>(null);
 	let ebaLoadingPercent = $state<number | null>(null);
+	let regafiLoadingMessage = $state<string | null>(null);
+	let regafiLoadingPercent = $state<number | null>(null);
 
 	const PAGE_SIZE = 10;
 	let ebaPage = $state(1);
@@ -638,9 +687,11 @@
 		if (!regafiDatasetId) return;
 		clearComparisonMode();
 		regafiLoading = true;
+		const progressRequestId = beginRegafiLoadingProgress('Chargement de la page REGAFI en cours...');
 		try {
 			const params = new URLSearchParams({
 				datasetId: regafiDatasetId,
+				progressRequestId,
 				page: String(regafiPage),
 				pageSize: String(PAGE_SIZE),
 				sortKey: regafiSortKey,
@@ -657,6 +708,7 @@
 			regafiFilterOptions = data.filterOptions || {};
 		} finally {
 			regafiLoading = false;
+			endRegafiLoadingProgress();
 		}
 	}
 
@@ -752,6 +804,48 @@
 		ebaLoadingPercent = null;
 	}
 
+	let regafiProgressPollToken = 0;
+
+	async function pollRegafiLoadingProgress(requestId: string, token: number) {
+		while (regafiProgressPollToken === token) {
+			try {
+				const res = await fetch(`/api/regafi?progressOnly=1&progressRequestId=${encodeURIComponent(requestId)}`);
+				const data = await res.json();
+				const progress = data.progress as
+					| { message: string; percent: number; status: 'running' | 'done' | 'error' }
+					| null;
+
+				if (progress) {
+					regafiLoadingMessage = progress.message;
+					regafiLoadingPercent = progress.percent;
+					if (progress.status !== 'running') {
+						return;
+					}
+				}
+			} catch {
+				return;
+			}
+
+			await new Promise((resolve) => setTimeout(resolve, 350));
+		}
+	}
+
+	function beginRegafiLoadingProgress(initialMessage: string): string {
+		const requestId = crypto.randomUUID();
+		regafiProgressPollToken += 1;
+		const token = regafiProgressPollToken;
+		regafiLoadingMessage = initialMessage;
+		regafiLoadingPercent = 2;
+		void pollRegafiLoadingProgress(requestId, token);
+		return requestId;
+	}
+
+	function endRegafiLoadingProgress() {
+		regafiProgressPollToken += 1;
+		regafiLoadingMessage = null;
+		regafiLoadingPercent = null;
+	}
+
 	async function loadLatestEba() {
 		clearComparisonMode();
 		ebaLoading = true;
@@ -784,9 +878,11 @@
 	async function loadLatestRegafi() {
 		clearComparisonMode();
 		regafiLoading = true;
+		const progressRequestId = beginRegafiLoadingProgress('Demande de chargement REGAFI envoyée au serveur...');
 		try {
 			const params = new URLSearchParams({
 				latest: '1',
+				progressRequestId,
 				page: String(regafiPage),
 				pageSize: String(PAGE_SIZE),
 				sortKey: regafiSortKey,
@@ -804,6 +900,7 @@
 			regafiFilterOptions = data.filterOptions || {};
 		} finally {
 			regafiLoading = false;
+			endRegafiLoadingProgress();
 		}
 	}
 
@@ -966,41 +1063,37 @@
 
 		<section class="bg-white rounded-lg border border-gray-200 p-6">
 			<div class="border border-gray-200 rounded-lg overflow-hidden">
-				<div class="bg-blue-50 px-4 py-3 border-b border-gray-200 flex items-center justify-between gap-4">
+				<div class="relative bg-blue-50 px-4 py-3 border-b border-gray-200 flex items-center justify-between gap-4">
 					<h3 class="text-base font-semibold text-blue-800">EBA ({displayEbaCount})</h3>
-					<EbaUpload onLoaded={onEbaLoaded} />
-				</div>
-
-				{#if ebaLoading && !ebaDatasetId}
-					<div class="px-5 py-8">
-						<div class="mx-auto max-w-xl rounded-lg border border-blue-200 bg-blue-50 p-4 text-center">
-							<div class="mx-auto mb-3 h-7 w-7 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600"></div>
-							<p class="text-sm font-medium text-blue-900">Chargement du dernier dataset EBA...</p>
-							<p class="mt-1 text-sm text-blue-800">{ebaLoadingMessage || 'Le serveur prépare les données.'}</p>
-							<div class="mx-auto mt-4 h-2 max-w-md overflow-hidden rounded-full bg-blue-100">
-								<div
-									class="h-full rounded-full bg-blue-600 transition-[width] duration-200"
-									style={`width: ${Math.max(ebaLoadingPercent ?? 6, 6)}%`}
-								></div>
-							</div>
-							<p class="mt-2 text-xs text-blue-700">{ebaLoadingPercent ?? 0}%</p>
-						</div>
-					</div>
-				{:else if ebaDatasetId}
 					{#if ebaLoading}
-						<div class="border-b border-gray-200 bg-blue-50 px-4 py-3">
-							<div class="flex items-center gap-3 text-sm text-blue-900">
-								<div class="h-4 w-4 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600"></div>
-								<div class="flex-1">
-									<p>{ebaLoadingMessage || 'Actualisation des données EBA...'}</p>
-									<div class="mt-2 h-1.5 overflow-hidden rounded-full bg-blue-100">
-										<div class="h-full rounded-full bg-blue-600 transition-[width] duration-200" style={`width: ${Math.max(ebaLoadingPercent ?? 6, 6)}%`}></div>
+						<div class="pointer-events-none absolute left-1/2 top-1/2 w-full max-w-md -translate-x-1/2 -translate-y-1/2 px-4">
+							<div class="rounded-lg border border-blue-200 bg-white/90 px-3 py-2 shadow-sm">
+								<div class="flex items-center gap-3 text-sm text-blue-900">
+									<div class="h-4 w-4 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600"></div>
+									<div class="flex-1">
+										<p>{ebaLoadingMessage || 'Chargement des données EBA...'}</p>
+										<div class="mt-2 h-1.5 overflow-hidden rounded-full bg-blue-100">
+											<div class="h-full rounded-full bg-blue-600 transition-[width] duration-200" style={`width: ${Math.max(ebaLoadingPercent ?? 6, 6)}%`}></div>
+										</div>
 									</div>
+									<span class="text-xs text-blue-700">{ebaLoadingPercent ?? 0}%</span>
 								</div>
-								<span class="text-xs text-blue-700">{ebaLoadingPercent ?? 0}%</span>
 							</div>
 						</div>
 					{/if}
+					<div class="flex items-center gap-2">
+						<button
+							type="button"
+							class="rounded border border-blue-300 px-3 py-2 text-xs font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-40"
+							onclick={() => void exportDatasetTableToCsv('eba')}
+							disabled={ebaExportLoading || !ebaDatasetId}
+						>
+							{ebaExportLoading ? 'Export...' : 'Exporter les filtres'}
+						</button>
+						<EbaUpload onLoaded={onEbaLoaded} />
+					</div>
+				</div>
+				{#if ebaDatasetId}
 					<div class="overflow-x-auto overflow-y-visible">
 						<table class="w-full table-fixed text-sm">
 							<thead class="bg-gray-50 sticky top-0">
@@ -1120,9 +1213,35 @@
 
 		<section class="bg-white rounded-lg border border-gray-200 p-6">
 			<div class="border border-gray-200 rounded-lg overflow-hidden">
-				<div class="bg-red-50 px-4 py-3 border-b border-gray-200 flex items-center justify-between gap-4">
+				<div class="relative bg-red-50 px-4 py-3 border-b border-gray-200 flex items-center justify-between gap-4">
 					<h3 class="text-base font-semibold text-red-800">REGAFI ({displayRegafiCount})</h3>
-					<RegafiUpload onLoaded={onRegafiLoaded} />
+					{#if regafiLoading}
+						<div class="pointer-events-none absolute left-1/2 top-1/2 w-full max-w-md -translate-x-1/2 -translate-y-1/2 px-4">
+							<div class="rounded-lg border border-red-200 bg-white/90 px-3 py-2 shadow-sm">
+								<div class="flex items-center gap-3 text-sm text-red-900">
+									<div class="h-4 w-4 animate-spin rounded-full border-2 border-red-200 border-t-red-600"></div>
+									<div class="flex-1">
+										<p>{regafiLoadingMessage || 'Chargement des données REGAFI...'}</p>
+										<div class="mt-2 h-1.5 overflow-hidden rounded-full bg-red-100">
+											<div class="h-full rounded-full bg-red-600 transition-[width] duration-200" style={`width: ${Math.max(regafiLoadingPercent ?? 6, 6)}%`}></div>
+										</div>
+									</div>
+									<span class="text-xs text-red-700">{regafiLoadingPercent ?? 0}%</span>
+								</div>
+							</div>
+						</div>
+					{/if}
+					<div class="flex items-center gap-2">
+						<button
+							type="button"
+							class="rounded border border-red-300 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-40"
+							onclick={() => void exportDatasetTableToCsv('regafi')}
+							disabled={regafiExportLoading || !regafiDatasetId}
+						>
+							{regafiExportLoading ? 'Export...' : 'Exporter les filtres'}
+						</button>
+						<RegafiUpload onLoaded={onRegafiLoaded} />
+					</div>
 				</div>
 
 				{#if regafiDatasetId}

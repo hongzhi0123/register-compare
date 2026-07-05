@@ -38,6 +38,43 @@
 		onlyInEba: 'bg-purple-100 text-purple-800'
 	};
 
+	function escapeCsv(value: string | null | undefined): string {
+		const normalized = value ?? '';
+		const escaped = normalized.replace(/"/g, '""');
+		return `"${escaped}"`;
+	}
+
+	function exportFilteredToCsv() {
+		const header = ['Statut', 'SIREN', 'Denomination', 'Categorie', 'Ville', 'Differences'];
+		const rows = filtered.map((match: ComparisonMatch) => {
+			const denomination = match.regafi?.denomination || match.eba?.denomination || '';
+			const categorie = match.regafi?.categorie || match.eba?.categorie || '';
+			const ville = match.regafi?.ville || match.eba?.ville || '';
+			const differences = match.differences.join(' | ');
+
+			return [
+				escapeCsv(statusLabels[match.status] || match.status),
+				escapeCsv(match.siren),
+				escapeCsv(denomination),
+				escapeCsv(categorie),
+				escapeCsv(ville),
+				escapeCsv(differences)
+			].join(',');
+		});
+
+		const csvContent = [header.map((h) => escapeCsv(h)).join(','), ...rows].join('\n');
+		const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+		const url = URL.createObjectURL(blob);
+		const link = document.createElement('a');
+		const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+		link.href = url;
+		link.download = `comparison-results-${timestamp}.csv`;
+		document.body.appendChild(link);
+		link.click();
+		document.body.removeChild(link);
+		URL.revokeObjectURL(url);
+	}
+
 	function toggleExpand(siren: string) {
 		if (expanded.has(siren)) {
 			expanded.delete(siren);
@@ -49,7 +86,7 @@
 </script>
 
 <div class="space-y-4">
-	<div class="flex flex-col sm:flex-row gap-3">
+	<div class="flex flex-col lg:flex-row gap-3 lg:items-center">
 		<input
 			type="text"
 			placeholder="Rechercher par nom ou SIREN..."
@@ -57,18 +94,29 @@
 			bind:value={search}
 		/>
 
-		<select
-			class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-			bind:value={statusFilter}
-		>
-			<option value="all">Tous les statuts</option>
-			<option value="match">✅ Correspondances</option>
-			<option value="nameMismatch">⚠️ Noms différents</option>
-			<option value="cityMismatch">⚠️ Villes différentes</option>
-			<option value="categoryMismatch">⚠️ Catégories différentes</option>
-			<option value="onlyInRegafi">❌ Uniquement REGAFI</option>
-			<option value="onlyInEba">❓ Uniquement EBA</option>
-		</select>
+		<div class="flex flex-col sm:flex-row gap-3">
+			<select
+				class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+				bind:value={statusFilter}
+			>
+				<option value="all">Tous les statuts</option>
+				<option value="match">✅ Correspondances</option>
+				<option value="nameMismatch">⚠️ Noms différents</option>
+				<option value="cityMismatch">⚠️ Villes différentes</option>
+				<option value="categoryMismatch">⚠️ Catégories différentes</option>
+				<option value="onlyInRegafi">❌ Uniquement REGAFI</option>
+				<option value="onlyInEba">❓ Uniquement EBA</option>
+			</select>
+
+			<button
+				type="button"
+				class="px-4 py-2 rounded-lg text-sm font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+				onclick={exportFilteredToCsv}
+				disabled={filtered.length === 0}
+			>
+				Exporter ({filtered.length})
+			</button>
+		</div>
 	</div>
 
 	<div class="text-sm text-gray-500">
