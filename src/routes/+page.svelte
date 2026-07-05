@@ -16,6 +16,18 @@
 	type SortKey = DatasetColumnKey | 'none';
 	type SortDirection = 'asc' | 'desc';
 	type FilterType = 'none' | 'text' | 'select' | 'text-select';
+	type SelectFilterValue = string[];
+
+	interface SelectOption {
+		value: string;
+		label: string;
+	}
+
+	const SPECIAL_SELECT_OPTIONS: SelectOption[] = [
+		{ value: '__all__', label: 'Toutes' },
+		{ value: '__empty__', label: 'Valeur vide uniquement' },
+		{ value: '__non_empty__', label: 'Exclure les valeurs vides' }
+	];
 
 	interface TableColumn {
 		key: DatasetColumnKey;
@@ -87,18 +99,71 @@
 		return Object.fromEntries(entries) as Partial<Record<DatasetColumnKey, string>>;
 	}
 
-	function createSelectFilters(columns: TableColumn[]): Partial<Record<DatasetColumnKey, string>> {
+	function createSelectFilters(columns: TableColumn[]): Partial<Record<DatasetColumnKey, SelectFilterValue>> {
 		const entries = columns
 			.filter((column) => column.filterType === 'select' || column.filterType === 'text-select')
-			.map((column) => [column.key, ''] as const);
-		return Object.fromEntries(entries) as Partial<Record<DatasetColumnKey, string>>;
+			.map((column) => [column.key, [] as string[]] as const);
+		return Object.fromEntries(entries) as Partial<Record<DatasetColumnKey, SelectFilterValue>>;
 	}
 
-	function toFilterParams(filters: Partial<Record<DatasetColumnKey, string>>): string {
+	function toFilterParams(filters: Partial<Record<DatasetColumnKey, string | string[]>>): string {
 		const cleaned = Object.fromEntries(
-			Object.entries(filters).map(([key, value]) => [key, value ?? ''])
-		) as Partial<Record<DatasetColumnKey, string>>;
+			Object.entries(filters).map(([key, value]) => {
+				if (Array.isArray(value)) {
+					return [key, value.filter((item) => typeof item === 'string')];
+				}
+				return [key, value ?? ''];
+			})
+		) as Partial<Record<DatasetColumnKey, string | string[]>>;
 		return JSON.stringify(cleaned);
+	}
+
+	function getSelectOptions(
+		column: TableColumn,
+		filterOptions: Partial<Record<DatasetColumnKey, string[]>>
+	): SelectOption[] {
+		if (column.filterType !== 'select') {
+			return SPECIAL_SELECT_OPTIONS;
+		}
+
+		const dynamic = (filterOptions[column.key] ?? []).map((value) => ({ value, label: value }));
+		return [...SPECIAL_SELECT_OPTIONS, ...dynamic];
+	}
+
+	function getSelectFilterLabel(
+		filters: Partial<Record<DatasetColumnKey, SelectFilterValue>>,
+		key: DatasetColumnKey
+	): string {
+		const selected = filters[key] ?? [];
+		if (selected.length === 0) return 'Toutes';
+		if (selected.length === 1) {
+			const special = SPECIAL_SELECT_OPTIONS.find((option) => option.value === selected[0]);
+			return special?.label ?? selected[0];
+		}
+		return `${selected.length} selections`;
+	}
+
+	function isSelectValueChecked(
+		filters: Partial<Record<DatasetColumnKey, SelectFilterValue>>,
+		key: DatasetColumnKey,
+		value: string
+	): boolean {
+		const selected = filters[key] ?? [];
+		if (value === '__all__') return selected.length === 0;
+		return selected.includes(value);
+	}
+
+	function toggleSelectValue(current: string[], value: string): string[] {
+		if (value === '__all__') return [];
+
+		const selected = new Set(current);
+		if (selected.has(value)) {
+			selected.delete(value);
+		} else {
+			selected.add(value);
+		}
+
+		return Array.from(selected);
 	}
 
 	function isSortActive(sortKey: SortKey, sortDir: SortDirection, key: DatasetColumnKey, dir: SortDirection): boolean {
@@ -127,8 +192,8 @@
 
 	let ebaTextFilters = $state<Partial<Record<DatasetColumnKey, string>>>(createTextFilters(EBA_COLUMNS));
 	let regafiTextFilters = $state<Partial<Record<DatasetColumnKey, string>>>(createTextFilters(REGAFI_COLUMNS));
-	let ebaSelectFilters = $state<Partial<Record<DatasetColumnKey, string>>>(createSelectFilters(EBA_COLUMNS));
-	let regafiSelectFilters = $state<Partial<Record<DatasetColumnKey, string>>>(createSelectFilters(REGAFI_COLUMNS));
+	let ebaSelectFilters = $state<Partial<Record<DatasetColumnKey, SelectFilterValue>>>(createSelectFilters(EBA_COLUMNS));
+	let regafiSelectFilters = $state<Partial<Record<DatasetColumnKey, SelectFilterValue>>>(createSelectFilters(REGAFI_COLUMNS));
 	let ebaFilterOptions = $state<Partial<Record<DatasetColumnKey, string[]>>>({});
 	let regafiFilterOptions = $state<Partial<Record<DatasetColumnKey, string[]>>>({});
 
@@ -306,14 +371,18 @@
 		void loadRegafiPage();
 	}
 
-	function onEbaSelectFilterChange(key: DatasetColumnKey, value: string) {
-		ebaSelectFilters = { ...ebaSelectFilters, [key]: value };
+	function onEbaSelectFilterToggle(key: DatasetColumnKey, value: string) {
+		const current = ebaSelectFilters[key] ?? [];
+		const next = toggleSelectValue(current, value);
+		ebaSelectFilters = { ...ebaSelectFilters, [key]: next };
 		ebaPage = 1;
 		void loadEbaPage();
 	}
 
-	function onRegafiSelectFilterChange(key: DatasetColumnKey, value: string) {
-		regafiSelectFilters = { ...regafiSelectFilters, [key]: value };
+	function onRegafiSelectFilterToggle(key: DatasetColumnKey, value: string) {
+		const current = regafiSelectFilters[key] ?? [];
+		const next = toggleSelectValue(current, value);
+		regafiSelectFilters = { ...regafiSelectFilters, [key]: next };
 		regafiPage = 1;
 		void loadRegafiPage();
 	}
@@ -338,7 +407,7 @@
 				</div>
 
 				{#if ebaDatasetId}
-					<div class="overflow-x-auto">
+					<div class="overflow-x-auto overflow-y-visible">
 						<table class="w-full table-fixed text-sm">
 							<thead class="bg-gray-50 sticky top-0">
 								<tr>
@@ -387,20 +456,24 @@
 														/>
 													{/if}
 													{#if column.filterType === 'select' || column.filterType === 'text-select'}
-														<select
-															class="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
-															value={ebaSelectFilters[column.key] ?? ''}
-															onchange={(event) => onEbaSelectFilterChange(column.key, (event.currentTarget as HTMLSelectElement).value)}
-														>
-															<option value="">Toutes</option>
-															<option value="__empty__">Valeur vide uniquement</option>
-															<option value="__non_empty__">Exclure les valeurs vides</option>
-															{#if column.filterType === 'select'}
-																{#each ebaFilterOptions[column.key] ?? [] as option}
-																	<option value={option}>{option}</option>
+														<details class="relative">
+															<summary class="w-full list-none cursor-pointer px-2 py-1 border border-gray-300 rounded text-xs bg-white text-left hover:bg-gray-50 focus:outline-none focus:ring-1 focus:ring-blue-500">
+																{getSelectFilterLabel(ebaSelectFilters, column.key)}
+															</summary>
+															<div class="absolute left-0 mt-1 w-64 max-h-56 overflow-auto rounded border border-gray-200 bg-white p-2 shadow-lg z-30">
+																{#each getSelectOptions(column, ebaFilterOptions) as option}
+																	<label class="flex items-center gap-2 rounded px-1 py-1 text-xs hover:bg-gray-50 cursor-pointer">
+																		<input
+																			type="checkbox"
+																			class="h-3.5 w-3.5"
+																			checked={isSelectValueChecked(ebaSelectFilters, column.key, option.value)}
+																			onchange={() => onEbaSelectFilterToggle(column.key, option.value)}
+																		/>
+																		<span class="truncate">{option.label}</span>
+																	</label>
 																{/each}
-															{/if}
-														</select>
+															</div>
+														</details>
 													{/if}
 												</div>
 											{/if}
@@ -442,7 +515,7 @@
 				</div>
 
 				{#if regafiDatasetId}
-					<div class="overflow-x-auto">
+					<div class="overflow-x-auto overflow-y-visible">
 						<table class="w-full table-fixed text-sm">
 							<thead class="bg-gray-50 sticky top-0">
 								<tr>
@@ -491,20 +564,24 @@
 														/>
 													{/if}
 													{#if column.filterType === 'select' || column.filterType === 'text-select'}
-														<select
-															class="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-red-500"
-															value={regafiSelectFilters[column.key] ?? ''}
-															onchange={(event) => onRegafiSelectFilterChange(column.key, (event.currentTarget as HTMLSelectElement).value)}
-														>
-															<option value="">Toutes</option>
-															<option value="__empty__">Valeur vide uniquement</option>
-															<option value="__non_empty__">Exclure les valeurs vides</option>
-															{#if column.filterType === 'select'}
-																{#each regafiFilterOptions[column.key] ?? [] as option}
-																	<option value={option}>{option}</option>
+														<details class="relative">
+															<summary class="w-full list-none cursor-pointer px-2 py-1 border border-gray-300 rounded text-xs bg-white text-left hover:bg-gray-50 focus:outline-none focus:ring-1 focus:ring-red-500">
+																{getSelectFilterLabel(regafiSelectFilters, column.key)}
+															</summary>
+															<div class="absolute left-0 mt-1 w-64 max-h-56 overflow-auto rounded border border-gray-200 bg-white p-2 shadow-lg z-30">
+																{#each getSelectOptions(column, regafiFilterOptions) as option}
+																	<label class="flex items-center gap-2 rounded px-1 py-1 text-xs hover:bg-gray-50 cursor-pointer">
+																		<input
+																			type="checkbox"
+																			class="h-3.5 w-3.5"
+																			checked={isSelectValueChecked(regafiSelectFilters, column.key, option.value)}
+																			onchange={() => onRegafiSelectFilterToggle(column.key, option.value)}
+																		/>
+																		<span class="truncate">{option.label}</span>
+																	</label>
 																{/each}
-															{/if}
-														</select>
+															</div>
+														</details>
 													{/if}
 												</div>
 											{/if}

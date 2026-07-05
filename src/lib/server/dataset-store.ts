@@ -81,7 +81,7 @@ export async function getDatasetPage(
 		page: number;
 		pageSize: number;
 		textFilters: Partial<Record<DatasetColumnKey, string>>;
-		selectFilters: Partial<Record<DatasetColumnKey, string>>;
+		selectFilters: Partial<Record<DatasetColumnKey, string[]>>;
 		sortKey: DatasetSortKey;
 		sortDir: DatasetSortDirection;
 	}
@@ -109,7 +109,7 @@ export async function getDatasetPage(
 	}
 
 	const filterOptions: Partial<Record<DatasetColumnKey, string[]>> = {};
-	for (const [rawKey, rawValue] of Object.entries(params.selectFilters)) {
+	for (const [rawKey] of Object.entries(params.selectFilters)) {
 		const key = rawKey as DatasetColumnKey;
 
 		const values = new Set<string>();
@@ -122,18 +122,19 @@ export async function getDatasetPage(
 
 	for (const [rawKey, rawValue] of Object.entries(params.selectFilters)) {
 		const key = rawKey as DatasetColumnKey;
-		const selectedValue = (rawValue || '').trim().toLowerCase();
-		if (!selectedValue) continue;
+		const selectedValues = (rawValue || []).map((value) => value.trim().toLowerCase()).filter(Boolean);
+		if (selectedValues.length === 0 || selectedValues.includes('__all__')) continue;
+
+		const hasEmpty = selectedValues.includes('__empty__');
+		const hasNonEmpty = selectedValues.includes('__non_empty__');
+		const exactValues = selectedValues.filter((value) => value !== '__empty__' && value !== '__non_empty__');
 
 		filtered = filtered.filter((entity) => {
 			const value = String(entity[key] ?? '').trim().toLowerCase();
-			if (selectedValue === '__empty__') {
-				return value === '';
-			}
-			if (selectedValue === '__non_empty__') {
-				return value !== '';
-			}
-			return value === selectedValue;
+			if (exactValues.includes(value)) return true;
+			if (value === '') return hasEmpty;
+			if (value !== '' && hasNonEmpty) return true;
+			return false;
 		});
 	}
 
@@ -170,7 +171,7 @@ export async function getLatestDatasetPage(
 		page: number;
 		pageSize: number;
 		textFilters: Partial<Record<DatasetColumnKey, string>>;
-		selectFilters: Partial<Record<DatasetColumnKey, string>>;
+		selectFilters: Partial<Record<DatasetColumnKey, string[]>>;
 		sortKey: DatasetSortKey;
 		sortDir: DatasetSortDirection;
 	}
