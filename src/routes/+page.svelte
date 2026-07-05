@@ -123,11 +123,18 @@
 		filterOptions: Partial<Record<DatasetColumnKey, string[]>>
 	): SelectOption[] {
 		if (column.filterType !== 'select') {
-			return SPECIAL_SELECT_OPTIONS;
+			return SPECIAL_SELECT_OPTIONS.filter((option) => option.value !== '__all__');
 		}
 
 		const dynamic = (filterOptions[column.key] ?? []).map((value) => ({ value, label: value }));
-		return [...SPECIAL_SELECT_OPTIONS, ...dynamic];
+		return [...SPECIAL_SELECT_OPTIONS.filter((option) => option.value !== '__all__'), ...dynamic];
+	}
+
+	function getSelectableValues(
+		column: TableColumn,
+		filterOptions: Partial<Record<DatasetColumnKey, string[]>>
+	): string[] {
+		return getSelectOptions(column, filterOptions).map((option) => option.value);
 	}
 
 	function getSelectFilterLabel(
@@ -149,12 +156,17 @@
 		value: string
 	): boolean {
 		const selected = filters[key] ?? [];
-		if (value === '__all__') return selected.length === 0;
 		return selected.includes(value);
 	}
 
+	function setAllSelectValues(
+		column: TableColumn,
+		filterOptions: Partial<Record<DatasetColumnKey, string[]>>
+	): string[] {
+		return getSelectableValues(column, filterOptions);
+	}
+
 	function toggleSelectValue(current: string[], value: string): string[] {
-		if (value === '__all__') return [];
 
 		const selected = new Set(current);
 		if (selected.has(value)) {
@@ -164,6 +176,21 @@
 		}
 
 		return Array.from(selected);
+	}
+
+	function getFilterButtonLabel(
+		filters: Partial<Record<DatasetColumnKey, SelectFilterValue>>,
+		key: DatasetColumnKey
+	): string {
+		return getSelectFilterLabel(filters, key);
+	}
+
+	function isClickInsideActiveFilter(
+		eventTarget: EventTarget | null,
+		kind: 'eba' | 'regafi',
+		key: DatasetColumnKey
+	): boolean {
+		return eventTarget instanceof Element && !!eventTarget.closest(`[data-filter-kind="${kind}"][data-filter-key="${key}"]`);
 	}
 
 	function isSortActive(sortKey: SortKey, sortDir: SortDirection, key: DatasetColumnKey, dir: SortDirection): boolean {
@@ -196,6 +223,82 @@
 	let regafiSelectFilters = $state<Partial<Record<DatasetColumnKey, SelectFilterValue>>>(createSelectFilters(REGAFI_COLUMNS));
 	let ebaFilterOptions = $state<Partial<Record<DatasetColumnKey, string[]>>>({});
 	let regafiFilterOptions = $state<Partial<Record<DatasetColumnKey, string[]>>>({});
+	let ebaOpenFilter = $state<DatasetColumnKey | null>(null);
+	let regafiOpenFilter = $state<DatasetColumnKey | null>(null);
+	let ebaFilterCloseTimer: ReturnType<typeof setTimeout> | null = null;
+	let regafiFilterCloseTimer: ReturnType<typeof setTimeout> | null = null;
+
+	function clearFilterCloseTimer(kind: 'eba' | 'regafi') {
+		if (kind === 'eba') {
+			if (ebaFilterCloseTimer) {
+				clearTimeout(ebaFilterCloseTimer);
+				ebaFilterCloseTimer = null;
+			}
+			return;
+		}
+
+		if (regafiFilterCloseTimer) {
+			clearTimeout(regafiFilterCloseTimer);
+			regafiFilterCloseTimer = null;
+		}
+	}
+
+	function scheduleFilterClose(kind: 'eba' | 'regafi', key: DatasetColumnKey) {
+		clearFilterCloseTimer(kind);
+		const timer = setTimeout(() => {
+			if (kind === 'eba') {
+				if (ebaOpenFilter === key) ebaOpenFilter = null;
+				ebaFilterCloseTimer = null;
+				return;
+			}
+
+			if (regafiOpenFilter === key) regafiOpenFilter = null;
+			regafiFilterCloseTimer = null;
+		}, 3000);
+
+		if (kind === 'eba') {
+			ebaFilterCloseTimer = timer;
+		} else {
+			regafiFilterCloseTimer = timer;
+		}
+	}
+
+	function toggleFilterDropdown(kind: 'eba' | 'regafi', key: DatasetColumnKey) {
+		if (kind === 'eba') {
+			ebaOpenFilter = ebaOpenFilter === key ? null : key;
+			scheduleFilterClose(kind, key);
+			return;
+		}
+
+		regafiOpenFilter = regafiOpenFilter === key ? null : key;
+		scheduleFilterClose(kind, key);
+	}
+
+	function closeFilterDropdown(kind: 'eba' | 'regafi') {
+		if (kind === 'eba') {
+			ebaOpenFilter = null;
+			clearFilterCloseTimer(kind);
+			return;
+		}
+
+		regafiOpenFilter = null;
+		clearFilterCloseTimer(kind);
+	}
+
+	onMount(() => {
+		const handleDocumentClick = (event: MouseEvent) => {
+			if (ebaOpenFilter && !isClickInsideActiveFilter(event.target, 'eba', ebaOpenFilter)) {
+				closeFilterDropdown('eba');
+			}
+
+			if (regafiOpenFilter && !isClickInsideActiveFilter(event.target, 'regafi', regafiOpenFilter)) {
+				closeFilterDropdown('regafi');
+			}
+		};
+
+		document.addEventListener('click', handleDocumentClick);
+		return () => document.removeEventListener('click', handleDocumentClick);
+	});
 
 	async function loadEbaPage() {
 		if (!ebaDatasetId) return;
@@ -377,6 +480,7 @@
 		ebaSelectFilters = { ...ebaSelectFilters, [key]: next };
 		ebaPage = 1;
 		void loadEbaPage();
+		scheduleFilterClose('eba', key);
 	}
 
 	function onRegafiSelectFilterToggle(key: DatasetColumnKey, value: string) {
@@ -385,7 +489,37 @@
 		regafiSelectFilters = { ...regafiSelectFilters, [key]: next };
 		regafiPage = 1;
 		void loadRegafiPage();
+		scheduleFilterClose('regafi', key);
 	}
+
+	function onEbaSelectFilterClear(key: DatasetColumnKey) {
+		ebaSelectFilters = { ...ebaSelectFilters, [key]: [] };
+		ebaPage = 1;
+		void loadEbaPage();
+		scheduleFilterClose('eba', key);
+	}
+
+	function onRegafiSelectFilterClear(key: DatasetColumnKey) {
+		regafiSelectFilters = { ...regafiSelectFilters, [key]: [] };
+		regafiPage = 1;
+		void loadRegafiPage();
+		scheduleFilterClose('regafi', key);
+	}
+
+	function onEbaSelectFilterAll(key: DatasetColumnKey, column: TableColumn) {
+		ebaSelectFilters = { ...ebaSelectFilters, [key]: setAllSelectValues(column, ebaFilterOptions) };
+		ebaPage = 1;
+		void loadEbaPage();
+		scheduleFilterClose('eba', key);
+	}
+
+	function onRegafiSelectFilterAll(key: DatasetColumnKey, column: TableColumn) {
+		regafiSelectFilters = { ...regafiSelectFilters, [key]: setAllSelectValues(column, regafiFilterOptions) };
+		regafiPage = 1;
+		void loadRegafiPage();
+		scheduleFilterClose('regafi', key);
+	}
+
 </script>
 
 <div class="space-y-8">
@@ -456,24 +590,41 @@
 														/>
 													{/if}
 													{#if column.filterType === 'select' || column.filterType === 'text-select'}
-														<details class="relative">
-															<summary class="w-full list-none cursor-pointer px-2 py-1 border border-gray-300 rounded text-xs bg-white text-left hover:bg-gray-50 focus:outline-none focus:ring-1 focus:ring-blue-500">
-																{getSelectFilterLabel(ebaSelectFilters, column.key)}
-															</summary>
-															<div class="absolute left-0 mt-1 w-64 max-h-56 overflow-auto rounded border border-gray-200 bg-white p-2 shadow-lg z-30">
-																{#each getSelectOptions(column, ebaFilterOptions) as option}
-																	<label class="flex items-center gap-2 rounded px-1 py-1 text-xs hover:bg-gray-50 cursor-pointer">
-																		<input
-																			type="checkbox"
-																			class="h-3.5 w-3.5"
-																			checked={isSelectValueChecked(ebaSelectFilters, column.key, option.value)}
-																			onchange={() => onEbaSelectFilterToggle(column.key, option.value)}
-																		/>
-																		<span class="truncate">{option.label}</span>
-																	</label>
-																{/each}
-															</div>
-														</details>
+														<div class="relative" data-filter-kind="eba" data-filter-key={column.key}>
+															<button
+																type="button"
+																class="w-full px-2 py-1 border border-gray-300 rounded text-xs bg-white text-left hover:bg-gray-50 focus:outline-none focus:ring-1 focus:ring-blue-500"
+																onclick={() => toggleFilterDropdown('eba', column.key)}
+															>
+																{getFilterButtonLabel(ebaSelectFilters, column.key)}
+															</button>
+															{#if ebaOpenFilter === column.key}
+																<div class="absolute left-0 mt-1 w-72 max-h-60 overflow-auto rounded border border-gray-200 bg-white p-2 shadow-lg z-30">
+																	<div class="flex items-center justify-between gap-2 border-b border-gray-100 pb-2 mb-2 text-xs">
+																		<button type="button" class="rounded px-2 py-1 hover:bg-gray-100" onclick={() => onEbaSelectFilterAll(column.key, column)}>
+																			Tout cocher
+																		</button>
+																		<button type="button" class="rounded px-2 py-1 hover:bg-gray-100" onclick={() => onEbaSelectFilterClear(column.key)}>
+																			Tout décocher
+																		</button>
+																		<button type="button" class="rounded px-2 py-1 hover:bg-gray-100 text-red-600" onclick={() => onEbaSelectFilterClear(column.key)}>
+																			Effacer
+																		</button>
+																	</div>
+																	{#each getSelectOptions(column, ebaFilterOptions) as option}
+																		<label class="flex items-center gap-2 rounded px-1 py-1 text-xs hover:bg-gray-50 cursor-pointer">
+																			<input
+																				type="checkbox"
+																				class="h-3.5 w-3.5"
+																				checked={isSelectValueChecked(ebaSelectFilters, column.key, option.value)}
+																				onchange={() => onEbaSelectFilterToggle(column.key, option.value)}
+																			/>
+																			<span class="truncate">{option.label}</span>
+																		</label>
+																	{/each}
+																</div>
+															{/if}
+														</div>
 													{/if}
 												</div>
 											{/if}
@@ -564,24 +715,41 @@
 														/>
 													{/if}
 													{#if column.filterType === 'select' || column.filterType === 'text-select'}
-														<details class="relative">
-															<summary class="w-full list-none cursor-pointer px-2 py-1 border border-gray-300 rounded text-xs bg-white text-left hover:bg-gray-50 focus:outline-none focus:ring-1 focus:ring-red-500">
-																{getSelectFilterLabel(regafiSelectFilters, column.key)}
-															</summary>
-															<div class="absolute left-0 mt-1 w-64 max-h-56 overflow-auto rounded border border-gray-200 bg-white p-2 shadow-lg z-30">
-																{#each getSelectOptions(column, regafiFilterOptions) as option}
-																	<label class="flex items-center gap-2 rounded px-1 py-1 text-xs hover:bg-gray-50 cursor-pointer">
-																		<input
-																			type="checkbox"
-																			class="h-3.5 w-3.5"
-																			checked={isSelectValueChecked(regafiSelectFilters, column.key, option.value)}
-																			onchange={() => onRegafiSelectFilterToggle(column.key, option.value)}
-																		/>
-																		<span class="truncate">{option.label}</span>
-																	</label>
-																{/each}
-															</div>
-														</details>
+														<div class="relative" data-filter-kind="regafi" data-filter-key={column.key}>
+															<button
+																type="button"
+																class="w-full px-2 py-1 border border-gray-300 rounded text-xs bg-white text-left hover:bg-gray-50 focus:outline-none focus:ring-1 focus:ring-red-500"
+																onclick={() => toggleFilterDropdown('regafi', column.key)}
+															>
+																{getFilterButtonLabel(regafiSelectFilters, column.key)}
+															</button>
+															{#if regafiOpenFilter === column.key}
+																<div class="absolute left-0 mt-1 w-72 max-h-60 overflow-auto rounded border border-gray-200 bg-white p-2 shadow-lg z-30">
+																	<div class="flex items-center justify-between gap-2 border-b border-gray-100 pb-2 mb-2 text-xs">
+																		<button type="button" class="rounded px-2 py-1 hover:bg-gray-100" onclick={() => onRegafiSelectFilterAll(column.key, column)}>
+																			Tout cocher
+																		</button>
+																		<button type="button" class="rounded px-2 py-1 hover:bg-gray-100" onclick={() => onRegafiSelectFilterClear(column.key)}>
+																			Tout décocher
+																		</button>
+																		<button type="button" class="rounded px-2 py-1 hover:bg-gray-100 text-red-600" onclick={() => onRegafiSelectFilterClear(column.key)}>
+																			Effacer
+																		</button>
+																	</div>
+																	{#each getSelectOptions(column, regafiFilterOptions) as option}
+																		<label class="flex items-center gap-2 rounded px-1 py-1 text-xs hover:bg-gray-50 cursor-pointer">
+																			<input
+																				type="checkbox"
+																				class="h-3.5 w-3.5"
+																				checked={isSelectValueChecked(regafiSelectFilters, column.key, option.value)}
+																				onchange={() => onRegafiSelectFilterToggle(column.key, option.value)}
+																			/>
+																			<span class="truncate">{option.label}</span>
+																		</label>
+																	{/each}
+																</div>
+															{/if}
+														</div>
 													{/if}
 												</div>
 											{/if}
