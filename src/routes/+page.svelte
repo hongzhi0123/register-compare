@@ -248,6 +248,8 @@
 	let regafiPageItems = $state<NormalizedEntity[]>([]);
 	let ebaLoading = $state(false);
 	let regafiLoading = $state(false);
+	let ebaLoadingMessage = $state<string | null>(null);
+	let ebaLoadingPercent = $state<number | null>(null);
 
 	const PAGE_SIZE = 10;
 	let ebaPage = $state(1);
@@ -607,9 +609,11 @@
 		if (!ebaDatasetId) return;
 		clearComparisonMode();
 		ebaLoading = true;
+		const progressRequestId = beginEbaLoadingProgress('Chargement de la page EBA en cours...');
 		try {
 			const params = new URLSearchParams({
 				datasetId: ebaDatasetId,
+				progressRequestId,
 				page: String(ebaPage),
 				pageSize: String(PAGE_SIZE),
 				sortKey: ebaSortKey,
@@ -626,6 +630,7 @@
 			ebaFilterOptions = data.filterOptions || {};
 		} finally {
 			ebaLoading = false;
+			endEbaLoadingProgress();
 		}
 	}
 
@@ -700,18 +705,61 @@
 
 	const ebaTotalPages = $derived(Math.max(1, Math.ceil(displayEbaCount / PAGE_SIZE)));
 	const regafiTotalPages = $derived(Math.max(1, Math.ceil(displayRegafiCount / PAGE_SIZE)));
+	let ebaProgressPollToken = 0;
 
 	onMount(() => {
 		if (!ebaDatasetId) void loadLatestEba();
 		if (!regafiDatasetId) void loadLatestRegafi();
 	});
 
+	async function pollEbaLoadingProgress(requestId: string, token: number) {
+		while (ebaProgressPollToken === token) {
+			try {
+				const res = await fetch(`/api/eba?progressOnly=1&progressRequestId=${encodeURIComponent(requestId)}`);
+				const data = await res.json();
+				const progress = data.progress as
+					| { message: string; percent: number; status: 'running' | 'done' | 'error' }
+					| null;
+
+				if (progress) {
+					ebaLoadingMessage = progress.message;
+					ebaLoadingPercent = progress.percent;
+					if (progress.status !== 'running') {
+						return;
+					}
+				}
+			} catch {
+				return;
+			}
+
+			await new Promise((resolve) => setTimeout(resolve, 350));
+		}
+	}
+
+	function beginEbaLoadingProgress(initialMessage: string): string {
+		const requestId = crypto.randomUUID();
+		ebaProgressPollToken += 1;
+		const token = ebaProgressPollToken;
+		ebaLoadingMessage = initialMessage;
+		ebaLoadingPercent = 2;
+		void pollEbaLoadingProgress(requestId, token);
+		return requestId;
+	}
+
+	function endEbaLoadingProgress() {
+		ebaProgressPollToken += 1;
+		ebaLoadingMessage = null;
+		ebaLoadingPercent = null;
+	}
+
 	async function loadLatestEba() {
 		clearComparisonMode();
 		ebaLoading = true;
+		const progressRequestId = beginEbaLoadingProgress('Demande de chargement EBA envoyée au serveur...');
 		try {
 			const params = new URLSearchParams({
 				latest: '1',
+				progressRequestId,
 				page: String(ebaPage),
 				pageSize: String(PAGE_SIZE),
 				sortKey: ebaSortKey,
@@ -729,6 +777,7 @@
 			ebaFilterOptions = data.filterOptions || {};
 		} finally {
 			ebaLoading = false;
+			endEbaLoadingProgress();
 		}
 	}
 
@@ -922,7 +971,36 @@
 					<EbaUpload onLoaded={onEbaLoaded} />
 				</div>
 
-				{#if ebaDatasetId}
+				{#if ebaLoading && !ebaDatasetId}
+					<div class="px-5 py-8">
+						<div class="mx-auto max-w-xl rounded-lg border border-blue-200 bg-blue-50 p-4 text-center">
+							<div class="mx-auto mb-3 h-7 w-7 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600"></div>
+							<p class="text-sm font-medium text-blue-900">Chargement du dernier dataset EBA...</p>
+							<p class="mt-1 text-sm text-blue-800">{ebaLoadingMessage || 'Le serveur prépare les données.'}</p>
+							<div class="mx-auto mt-4 h-2 max-w-md overflow-hidden rounded-full bg-blue-100">
+								<div
+									class="h-full rounded-full bg-blue-600 transition-[width] duration-200"
+									style={`width: ${Math.max(ebaLoadingPercent ?? 6, 6)}%`}
+								></div>
+							</div>
+							<p class="mt-2 text-xs text-blue-700">{ebaLoadingPercent ?? 0}%</p>
+						</div>
+					</div>
+				{:else if ebaDatasetId}
+					{#if ebaLoading}
+						<div class="border-b border-gray-200 bg-blue-50 px-4 py-3">
+							<div class="flex items-center gap-3 text-sm text-blue-900">
+								<div class="h-4 w-4 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600"></div>
+								<div class="flex-1">
+									<p>{ebaLoadingMessage || 'Actualisation des données EBA...'}</p>
+									<div class="mt-2 h-1.5 overflow-hidden rounded-full bg-blue-100">
+										<div class="h-full rounded-full bg-blue-600 transition-[width] duration-200" style={`width: ${Math.max(ebaLoadingPercent ?? 6, 6)}%`}></div>
+									</div>
+								</div>
+								<span class="text-xs text-blue-700">{ebaLoadingPercent ?? 0}%</span>
+							</div>
+						</div>
+					{/if}
 					<div class="overflow-x-auto overflow-y-visible">
 						<table class="w-full table-fixed text-sm">
 							<thead class="bg-gray-50 sticky top-0">

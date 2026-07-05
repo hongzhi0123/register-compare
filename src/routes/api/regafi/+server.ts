@@ -1,6 +1,12 @@
 import { json } from '@sveltejs/kit';
 import { getDatasetPage, getLatestDatasetPage, persistDataset } from '$lib/server/dataset-store';
-import { fetchRegafiEntities, parseRegafiJson, normalizeRegafiEntity, normalizeFlatEntity } from '$lib/server/regafi';
+import {
+	fetchRegafiEntities,
+	parseRegafiJson,
+	normalizeRegafiEntity,
+	normalizeFlatEntity,
+	keepFrenchEntities
+} from '$lib/server/regafi';
 
 const ALLOWED_FILTER_KEYS = [
 	'siren',
@@ -64,12 +70,12 @@ export async function POST({ request }) {
 		const body = text ? JSON.parse(text) : null;
 
 		if (Array.isArray(body)) {
-			const entities = body.map(normalizeFlatEntity);
+			const entities = keepFrenchEntities(body.map(normalizeFlatEntity));
 			const stored = await persistDataset('regafi', entities);
 			return json({ success: true, datasetId: stored.datasetId, count: stored.count });
 		}
 		if (body.results) {
-			const entities = body.results.map(normalizeRegafiEntity);
+			const entities = keepFrenchEntities(body.results.map(normalizeRegafiEntity));
 			const stored = await persistDataset('regafi', entities);
 			return json({ success: true, datasetId: stored.datasetId, count: stored.count });
 		}

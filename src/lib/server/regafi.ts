@@ -47,10 +47,20 @@ export function parseRegafiJson(json: string): NormalizedEntity[] {
 
   const first = records[0] as Record<string, unknown>;
   if (first.fields && typeof first.fields === 'object') {
-    return (records as RegafiRecord[]).map(normalizeRegafiEntity);
+		return keepFrenchEntities((records as RegafiRecord[]).map(normalizeRegafiEntity));
   } else {
-    return records.map((r) => normalizeFlatEntity(r as Record<string, unknown>));
+		return keepFrenchEntities(records.map((r) => normalizeFlatEntity(r as Record<string, unknown>)));
   }
+}
+
+function isFrenchCountry(value: string | null): boolean {
+	if (!value) return false;
+	const normalized = value.trim().toUpperCase();
+	return normalized === 'FRANCE' || normalized === 'FR' || normalized === 'FRA';
+}
+
+export function keepFrenchEntities(entities: NormalizedEntity[]): NormalizedEntity[] {
+	return entities.filter((entity) => isFrenchCountry(entity.pays));
 }
 
 export function normalizeRegafiEntity(record: RegafiRecord): NormalizedEntity {

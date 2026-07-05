@@ -67,19 +67,27 @@ function extractCountry(props: Record<string, string>): string | null {
 	]);
 }
 
+function isFrenchCountry(country: string | null): boolean {
+	if (!country) return false;
+	const normalized = country.trim().toUpperCase();
+	return normalized === 'FRANCE' || normalized === 'FR' || normalized === 'FRA';
+}
+
 function normalizeEbaEntity(raw: Record<string, unknown>): NormalizedEntity | null {
-	// if (raw.CA_OwnerID !== 'FR_ACPR') return null;
+	if (raw.CA_OwnerID !== 'FR_ACPR') return null;
 
 	const props = extractProperties(raw);
+	const country = extractCountry(props);
+	if (country && !isFrenchCountry(country)) return null;
 
 	const siren = props['ENT_NAT_REF_COD'] || '';
-	// if (!siren) return null;
+	if (!siren) return null;
 
 	return {
 		siren,
 		denomination: props['ENT_NAM'] || '',
 		ville: props['ENT_TOW_CIT_RES'] || null,
-		pays: extractCountry(props),
+		pays: country || 'FRANCE',
 		categorie: mapEbaTypeToCategory(String(raw.EntityType || '')),
 		lei: null,
 		entityCode: raw.EntityCode ? String(raw.EntityCode) : undefined,

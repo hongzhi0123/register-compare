@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit';
-import { getDatasetPage, getLatestDatasetPage, persistDataset } from '$lib/server/dataset-store';
+import { getDatasetLoadProgress, getDatasetPage, getLatestDatasetPage, persistDataset } from '$lib/server/dataset-store';
 import { parseEbaStream } from '$lib/server/eba';
 
 const ALLOWED_FILTER_KEYS = [
@@ -79,6 +79,8 @@ export async function GET({ url }) {
 	try {
 		const datasetId = url.searchParams.get('datasetId');
 		const latest = url.searchParams.get('latest') === '1';
+		const progressOnly = url.searchParams.get('progressOnly') === '1';
+		const progressRequestId = url.searchParams.get('progressRequestId');
 		const page = Number(url.searchParams.get('page') || '1');
 		const pageSize = Number(url.searchParams.get('pageSize') || '10');
 		const textFilters = parseTextFilterMap(url.searchParams.get('textFilters'));
@@ -91,6 +93,14 @@ export async function GET({ url }) {
 				? 'none'
 				: 'siren';
 
+		if (progressOnly) {
+			if (!progressRequestId) {
+				return json({ success: false, error: 'progressRequestId requis' }, { status: 400 });
+			}
+
+			return json({ success: true, progress: getDatasetLoadProgress(progressRequestId) });
+		}
+
 		if (latest) {
 			const result = await getLatestDatasetPage('eba', {
 				page: Number.isFinite(page) && page > 0 ? page : 1,
@@ -98,7 +108,8 @@ export async function GET({ url }) {
 				textFilters,
 				selectFilters,
 				sortKey,
-				sortDir
+				sortDir,
+				progressRequestId
 			});
 
 			return json({ success: true, ...result });
@@ -114,7 +125,8 @@ export async function GET({ url }) {
 			textFilters,
 			selectFilters,
 			sortKey,
-			sortDir
+			sortDir,
+			progressRequestId
 		});
 
 		return json({ success: true, datasetId, ...result });
