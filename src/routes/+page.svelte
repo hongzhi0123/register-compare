@@ -10,6 +10,9 @@
 		| 'ville'
 		| 'pays'
 		| 'categorie'
+		| 'rolesSummary'
+		| 'rolesCountry'
+		| 'rolesName'
 		| 'entityCode'
 		| 'lei'
 		| 'idReferentiel';
@@ -54,7 +57,7 @@
 	}
 
 	const EBA_COLUMNS: TableColumn[] = [
-		{ key: 'siren', label: 'SIREN', sortable: true, filterType: 'none', widthClass: 'w-28', cellClass: 'font-mono' },
+		{ key: 'siren', label: 'SIREN', sortable: true, filterType: 'text-select', widthClass: 'w-28', cellClass: 'font-mono' },
 		{
 			key: 'denomination',
 			label: 'Dénomination',
@@ -72,12 +75,20 @@
 			filterType: 'select',
 			widthClass: 'w-44',
 			cellClass: 'truncate max-w-40'
+		},
+		{
+			key: 'rolesSummary',
+			label: 'Rôles PSD2',
+			sortable: true,
+			filterType: 'none',
+			widthClass: 'w-64',
+			cellClass: 'truncate max-w-64'
 		},
 		{ key: 'entityCode', label: 'Code EBA', sortable: true, filterType: 'text-select', widthClass: 'w-36', cellClass: 'font-mono text-xs' }
 	];
 
 	const REGAFI_COLUMNS: TableColumn[] = [
-		{ key: 'siren', label: 'SIREN', sortable: true, filterType: 'none', widthClass: 'w-28', cellClass: 'font-mono' },
+		{ key: 'siren', label: 'SIREN', sortable: true, filterType: 'text-select', widthClass: 'w-28', cellClass: 'font-mono' },
 		{
 			key: 'denomination',
 			label: 'Dénomination',
@@ -95,6 +106,14 @@
 			filterType: 'select',
 			widthClass: 'w-44',
 			cellClass: 'truncate max-w-40'
+		},
+		{
+			key: 'rolesSummary',
+			label: 'Rôles PSD2',
+			sortable: true,
+			filterType: 'none',
+			widthClass: 'w-64',
+			cellClass: 'truncate max-w-64'
 		},
 		{ key: 'lei', label: 'LEI', sortable: true, filterType: 'text-select', widthClass: 'w-44', cellClass: 'font-mono text-xs' },
 		{
@@ -150,6 +169,18 @@
 		filterOptions: Partial<Record<DatasetColumnKey, string[]>>
 	): string[] {
 		return getSelectOptions(column, filterOptions).map((option) => option.value);
+	}
+
+	function getRoleSelectOptions(values: string[]): SelectOption[] {
+		const dynamic = Array.from(new Set(values.map((value) => value.trim()).filter((value) => value.length > 0))).map((value) => ({
+			value,
+			label: value
+		}));
+		return [...SPECIAL_SELECT_OPTIONS.filter((option) => option.value !== '__all__'), ...dynamic];
+	}
+
+	function getRoleSelectableValues(values: string[]): string[] {
+		return getRoleSelectOptions(values).map((option) => option.value);
 	}
 
 	function getSelectFilterLabel(
@@ -212,11 +243,36 @@
 		return sortKey === key && sortDir === dir;
 	}
 
+	function deriveRolesSummary(entity: NormalizedEntity): string {
+		if (entity.rolesSummary && entity.rolesSummary.trim()) return entity.rolesSummary;
+		const roles = Array.from(
+			new Set(
+				(entity.rolesByCountry ?? []).flatMap((entry) => {
+					if ('roles' in entry && Array.isArray(entry.roles)) {
+						return entry.roles;
+					}
+					return Object.values(entry).flatMap((value) => (Array.isArray(value) ? value : []));
+				}).filter(Boolean)
+			)
+		).sort((a, b) => a.localeCompare(b, 'fr'));
+		if (roles.length === 0) return '-';
+		const visible = roles.slice(0, 3);
+		const hiddenCount = roles.length - visible.length;
+		return hiddenCount > 0 ? `${visible.join(', ')} +${hiddenCount}` : visible.join(', ');
+	}
+
+	function getColumnValue(entity: NormalizedEntity, key: DatasetColumnKey): string {
+		if (key === 'rolesSummary') return deriveRolesSummary(entity);
+		if (key === 'rolesCountry' || key === 'rolesName') return '-';
+		const raw = entity[key];
+		return raw === null || raw === undefined || raw === '' ? '-' : String(raw);
+	}
+
 	function sortEntities(items: NormalizedEntity[], sortKey: SortKey, sortDir: SortDirection): NormalizedEntity[] {
 		if (sortKey === 'none') return [...items];
 		return [...items].sort((left, right) => {
-			const l = String(left[sortKey] ?? '');
-			const r = String(right[sortKey] ?? '');
+			const l = getColumnValue(left, sortKey);
+			const r = getColumnValue(right, sortKey);
 			const result = l.localeCompare(r, 'fr', { sensitivity: 'base' });
 			return sortDir === 'desc' ? -result : result;
 		});
@@ -261,8 +317,8 @@
 			const rows = items.map((entity) =>
 				columns
 					.map((column) => {
-						const raw = entity[column.key];
-						return escapeCsv(raw === null || raw === undefined ? '' : String(raw));
+						const raw = getColumnValue(entity, column.key);
+						return escapeCsv(raw === '-' ? '' : raw);
 					})
 					.join(',')
 			);
@@ -311,8 +367,16 @@
 
 	let ebaTextFilters = $state<Partial<Record<DatasetColumnKey, string>>>(createTextFilters(EBA_COLUMNS));
 	let regafiTextFilters = $state<Partial<Record<DatasetColumnKey, string>>>(createTextFilters(REGAFI_COLUMNS));
-	let ebaSelectFilters = $state<Partial<Record<DatasetColumnKey, SelectFilterValue>>>(createSelectFilters(EBA_COLUMNS));
-	let regafiSelectFilters = $state<Partial<Record<DatasetColumnKey, SelectFilterValue>>>(createSelectFilters(REGAFI_COLUMNS));
+	let ebaSelectFilters = $state<Partial<Record<DatasetColumnKey, SelectFilterValue>>>({
+		...createSelectFilters(EBA_COLUMNS),
+		rolesCountry: [],
+		rolesName: []
+	});
+	let regafiSelectFilters = $state<Partial<Record<DatasetColumnKey, SelectFilterValue>>>({
+		...createSelectFilters(REGAFI_COLUMNS),
+		rolesCountry: [],
+		rolesName: []
+	});
 	let ebaFilterOptions = $state<Partial<Record<DatasetColumnKey, string[]>>>({});
 	let regafiFilterOptions = $state<Partial<Record<DatasetColumnKey, string[]>>>({});
 	let ebaOpenFilter = $state<DatasetColumnKey | null>(null);
@@ -346,7 +410,6 @@
 			? regafiComparisonEntities.slice((regafiPage - 1) * PAGE_SIZE, regafiPage * PAGE_SIZE)
 			: regafiPageItems
 	);
-
 	function clearComparisonMode() {
 		ebaComparisonEntities = [];
 		regafiComparisonEntities = [];
@@ -749,8 +812,8 @@
 		regafiSortDir = 'asc';
 		ebaTextFilters = createTextFilters(EBA_COLUMNS);
 		regafiTextFilters = createTextFilters(REGAFI_COLUMNS);
-		ebaSelectFilters = createSelectFilters(EBA_COLUMNS);
-		regafiSelectFilters = createSelectFilters(REGAFI_COLUMNS);
+		ebaSelectFilters = { ...createSelectFilters(EBA_COLUMNS), rolesCountry: [], rolesName: [] };
+		regafiSelectFilters = { ...createSelectFilters(REGAFI_COLUMNS), rolesCountry: [], rolesName: [] };
 		ebaFilterOptions = {};
 		regafiFilterOptions = {};
 	}
@@ -986,6 +1049,54 @@
 		void loadRegafiPage();
 	}
 
+	function onEbaRoleSelectFilterToggle(key: 'rolesCountry' | 'rolesName', value: string) {
+		clearComparisonMode();
+		const current = ebaSelectFilters[key] ?? [];
+		const next = toggleSelectValue(current, value);
+		ebaSelectFilters = { ...ebaSelectFilters, [key]: next };
+		ebaPage = 1;
+		void loadEbaPage();
+	}
+
+	function onRegafiRoleSelectFilterToggle(key: 'rolesCountry' | 'rolesName', value: string) {
+		clearComparisonMode();
+		const current = regafiSelectFilters[key] ?? [];
+		const next = toggleSelectValue(current, value);
+		regafiSelectFilters = { ...regafiSelectFilters, [key]: next };
+		regafiPage = 1;
+		void loadRegafiPage();
+	}
+
+	function onEbaRoleSelectFilterClear(key: 'rolesCountry' | 'rolesName') {
+		clearComparisonMode();
+		ebaSelectFilters = { ...ebaSelectFilters, [key]: [] };
+		ebaPage = 1;
+		void loadEbaPage();
+	}
+
+	function onRegafiRoleSelectFilterClear(key: 'rolesCountry' | 'rolesName') {
+		clearComparisonMode();
+		regafiSelectFilters = { ...regafiSelectFilters, [key]: [] };
+		regafiPage = 1;
+		void loadRegafiPage();
+	}
+
+	function onEbaRoleSelectFilterAll(key: 'rolesCountry' | 'rolesName') {
+		clearComparisonMode();
+		const source = ebaFilterOptions[key] ?? [];
+		ebaSelectFilters = { ...ebaSelectFilters, [key]: getRoleSelectableValues(source) };
+		ebaPage = 1;
+		void loadEbaPage();
+	}
+
+	function onRegafiRoleSelectFilterAll(key: 'rolesCountry' | 'rolesName') {
+		clearComparisonMode();
+		const source = regafiFilterOptions[key] ?? [];
+		regafiSelectFilters = { ...regafiSelectFilters, [key]: getRoleSelectableValues(source) };
+		regafiPage = 1;
+		void loadRegafiPage();
+	}
+
 </script>
 
 <div class="space-y-8">
@@ -1131,7 +1242,80 @@
 								<tr class="bg-white border-y border-gray-200">
 									{#each EBA_COLUMNS as column}
 										<th class={`px-4 py-2 ${column.widthClass || ''}`}>
-											{#if column.filterType !== 'none'}
+															{#if column.key === 'rolesSummary'}
+																<div class="space-y-1">
+																	<div class="relative" data-filter-kind="eba" data-filter-key="rolesCountry">
+																		<button
+																			type="button"
+																			class="w-full px-2 py-1 border border-gray-300 rounded text-xs bg-white text-left hover:bg-gray-50 focus:outline-none focus:ring-1 focus:ring-blue-500"
+																			onclick={() => toggleFilterDropdown('eba', 'rolesCountry')}
+																		>
+																			Pays du role: {getFilterButtonLabel(ebaSelectFilters, 'rolesCountry')}
+																		</button>
+																		{#if ebaOpenFilter === 'rolesCountry'}
+																			<div class="absolute left-0 mt-1 w-72 max-h-60 overflow-auto rounded border border-gray-200 bg-white p-2 shadow-lg z-30">
+																				<div class="flex items-center justify-between gap-2 border-b border-gray-100 pb-2 mb-2 text-xs">
+																					<button type="button" class="rounded px-2 py-1 hover:bg-gray-100" onclick={() => onEbaRoleSelectFilterAll('rolesCountry')}>
+																						Tout cocher
+																					</button>
+																					<button type="button" class="rounded px-2 py-1 hover:bg-gray-100" onclick={() => onEbaRoleSelectFilterClear('rolesCountry')}>
+																						Tout decocher
+																					</button>
+																					<button type="button" class="rounded px-2 py-1 hover:bg-gray-100 text-red-600" onclick={() => onEbaRoleSelectFilterClear('rolesCountry')}>
+																						Effacer
+																					</button>
+																				</div>
+																				{#each getRoleSelectOptions(ebaFilterOptions.rolesCountry ?? []) as option}
+																					<label class="flex items-center gap-2 rounded px-1 py-1 text-xs hover:bg-gray-50 cursor-pointer">
+																						<input
+																							type="checkbox"
+																							class="h-3.5 w-3.5"
+																							checked={isSelectValueChecked(ebaSelectFilters, 'rolesCountry', option.value)}
+																							onchange={() => onEbaRoleSelectFilterToggle('rolesCountry', option.value)}
+																						/>
+																						<span class="truncate">{option.label}</span>
+																					</label>
+																				{/each}
+																			</div>
+																		{/if}
+																	</div>
+																	<div class="relative" data-filter-kind="eba" data-filter-key="rolesName">
+																		<button
+																			type="button"
+																			class="w-full px-2 py-1 border border-gray-300 rounded text-xs bg-white text-left hover:bg-gray-50 focus:outline-none focus:ring-1 focus:ring-blue-500"
+																			onclick={() => toggleFilterDropdown('eba', 'rolesName')}
+																		>
+																			Role PSD2: {getFilterButtonLabel(ebaSelectFilters, 'rolesName')}
+																		</button>
+																		{#if ebaOpenFilter === 'rolesName'}
+																			<div class="absolute left-0 mt-1 w-72 max-h-60 overflow-auto rounded border border-gray-200 bg-white p-2 shadow-lg z-30">
+																				<div class="flex items-center justify-between gap-2 border-b border-gray-100 pb-2 mb-2 text-xs">
+																					<button type="button" class="rounded px-2 py-1 hover:bg-gray-100" onclick={() => onEbaRoleSelectFilterAll('rolesName')}>
+																						Tout cocher
+																					</button>
+																					<button type="button" class="rounded px-2 py-1 hover:bg-gray-100" onclick={() => onEbaRoleSelectFilterClear('rolesName')}>
+																						Tout decocher
+																					</button>
+																					<button type="button" class="rounded px-2 py-1 hover:bg-gray-100 text-red-600" onclick={() => onEbaRoleSelectFilterClear('rolesName')}>
+																						Effacer
+																					</button>
+																				</div>
+																				{#each getRoleSelectOptions(ebaFilterOptions.rolesName ?? []) as option}
+																					<label class="flex items-center gap-2 rounded px-1 py-1 text-xs hover:bg-gray-50 cursor-pointer">
+																						<input
+																							type="checkbox"
+																							class="h-3.5 w-3.5"
+																							checked={isSelectValueChecked(ebaSelectFilters, 'rolesName', option.value)}
+																							onchange={() => onEbaRoleSelectFilterToggle('rolesName', option.value)}
+																						/>
+																						<span class="truncate">{option.label}</span>
+																					</label>
+																				{/each}
+																			</div>
+																		{/if}
+																	</div>
+																</div>
+															{:else if column.filterType !== 'none'}
 												<div class="space-y-1">
 													{#if column.filterType === 'text' || column.filterType === 'text-select'}
 														<input
@@ -1190,7 +1374,7 @@
 									<tr class="hover:bg-gray-50">
 										{#each EBA_COLUMNS as column}
 											<td class={`px-4 py-3 ${column.widthClass || ''} ${column.cellClass || ''}`}>
-												{entity[column.key] || '-'}
+												{getColumnValue(entity, column.key)}
 											</td>
 										{/each}
 									</tr>
@@ -1282,7 +1466,80 @@
 								<tr class="bg-white border-y border-gray-200">
 									{#each REGAFI_COLUMNS as column}
 										<th class={`px-4 py-2 ${column.widthClass || ''}`}>
-											{#if column.filterType !== 'none'}
+											{#if column.key === 'rolesSummary'}
+												<div class="space-y-1">
+													<div class="relative" data-filter-kind="regafi" data-filter-key="rolesCountry">
+														<button
+															type="button"
+															class="w-full px-2 py-1 border border-gray-300 rounded text-xs bg-white text-left hover:bg-gray-50 focus:outline-none focus:ring-1 focus:ring-red-500"
+															onclick={() => toggleFilterDropdown('regafi', 'rolesCountry')}
+														>
+															Pays du role: {getFilterButtonLabel(regafiSelectFilters, 'rolesCountry')}
+														</button>
+														{#if regafiOpenFilter === 'rolesCountry'}
+															<div class="absolute left-0 mt-1 w-72 max-h-60 overflow-auto rounded border border-gray-200 bg-white p-2 shadow-lg z-30">
+																<div class="flex items-center justify-between gap-2 border-b border-gray-100 pb-2 mb-2 text-xs">
+																	<button type="button" class="rounded px-2 py-1 hover:bg-gray-100" onclick={() => onRegafiRoleSelectFilterAll('rolesCountry')}>
+																		Tout cocher
+																	</button>
+																	<button type="button" class="rounded px-2 py-1 hover:bg-gray-100" onclick={() => onRegafiRoleSelectFilterClear('rolesCountry')}>
+																		Tout decocher
+																	</button>
+																	<button type="button" class="rounded px-2 py-1 hover:bg-gray-100 text-red-600" onclick={() => onRegafiRoleSelectFilterClear('rolesCountry')}>
+																		Effacer
+																	</button>
+																</div>
+																{#each getRoleSelectOptions(regafiFilterOptions.rolesCountry ?? []) as option}
+																	<label class="flex items-center gap-2 rounded px-1 py-1 text-xs hover:bg-gray-50 cursor-pointer">
+																		<input
+																			type="checkbox"
+																			class="h-3.5 w-3.5"
+																			checked={isSelectValueChecked(regafiSelectFilters, 'rolesCountry', option.value)}
+																			onchange={() => onRegafiRoleSelectFilterToggle('rolesCountry', option.value)}
+																		/>
+																		<span class="truncate">{option.label}</span>
+																	</label>
+																{/each}
+															</div>
+														{/if}
+													</div>
+													<div class="relative" data-filter-kind="regafi" data-filter-key="rolesName">
+														<button
+															type="button"
+															class="w-full px-2 py-1 border border-gray-300 rounded text-xs bg-white text-left hover:bg-gray-50 focus:outline-none focus:ring-1 focus:ring-red-500"
+															onclick={() => toggleFilterDropdown('regafi', 'rolesName')}
+														>
+															Role PSD2: {getFilterButtonLabel(regafiSelectFilters, 'rolesName')}
+														</button>
+														{#if regafiOpenFilter === 'rolesName'}
+															<div class="absolute left-0 mt-1 w-72 max-h-60 overflow-auto rounded border border-gray-200 bg-white p-2 shadow-lg z-30">
+																<div class="flex items-center justify-between gap-2 border-b border-gray-100 pb-2 mb-2 text-xs">
+																	<button type="button" class="rounded px-2 py-1 hover:bg-gray-100" onclick={() => onRegafiRoleSelectFilterAll('rolesName')}>
+																		Tout cocher
+																	</button>
+																	<button type="button" class="rounded px-2 py-1 hover:bg-gray-100" onclick={() => onRegafiRoleSelectFilterClear('rolesName')}>
+																		Tout decocher
+																	</button>
+																	<button type="button" class="rounded px-2 py-1 hover:bg-gray-100 text-red-600" onclick={() => onRegafiRoleSelectFilterClear('rolesName')}>
+																		Effacer
+																	</button>
+																</div>
+																{#each getRoleSelectOptions(regafiFilterOptions.rolesName ?? []) as option}
+																	<label class="flex items-center gap-2 rounded px-1 py-1 text-xs hover:bg-gray-50 cursor-pointer">
+																		<input
+																			type="checkbox"
+																			class="h-3.5 w-3.5"
+																			checked={isSelectValueChecked(regafiSelectFilters, 'rolesName', option.value)}
+																			onchange={() => onRegafiRoleSelectFilterToggle('rolesName', option.value)}
+																		/>
+																		<span class="truncate">{option.label}</span>
+																	</label>
+																{/each}
+															</div>
+														{/if}
+													</div>
+												</div>
+											{:else if column.filterType !== 'none'}
 												<div class="space-y-1">
 													{#if column.filterType === 'text' || column.filterType === 'text-select'}
 														<input
@@ -1341,7 +1598,7 @@
 									<tr class="hover:bg-gray-50">
 										{#each REGAFI_COLUMNS as column}
 											<td class={`px-4 py-3 ${column.widthClass || ''} ${column.cellClass || ''}`}>
-												{entity[column.key] || '-'}
+												{getColumnValue(entity, column.key)}
 											</td>
 										{/each}
 									</tr>

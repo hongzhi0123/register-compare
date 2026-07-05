@@ -45,10 +45,11 @@
 	}
 
 	function exportFilteredToCsv() {
-		const header = ['Statut', 'SIREN', 'Denomination', 'Categorie', 'Ville', 'Differences'];
+		const header = ['Statut', 'SIREN', 'Denomination', 'Categorie', 'Roles PSD2', 'Ville', 'Differences'];
 		const rows = filtered.map((match: ComparisonMatch) => {
 			const denomination = match.regafi?.denomination || match.eba?.denomination || '';
 			const categorie = match.regafi?.categorie || match.eba?.categorie || '';
+			const roles = match.rolesSummary || '';
 			const ville = match.regafi?.ville || match.eba?.ville || '';
 			const differences = match.differences.join(' | ');
 
@@ -57,6 +58,7 @@
 				escapeCsv(match.siren),
 				escapeCsv(denomination),
 				escapeCsv(categorie),
+				escapeCsv(roles),
 				escapeCsv(ville),
 				escapeCsv(differences)
 			].join(',');
@@ -82,6 +84,46 @@
 			expanded.add(siren);
 		}
 		expanded = new Set(expanded);
+	}
+
+	function formatRolesByCountry(match: ComparisonMatch): string {
+		const details = match.rolesDetails ?? [];
+		if (details.length === 0) return '-';
+
+		return details
+			.filter((entry) => entry.roles.length > 0)
+			.map((entry) => `${entry.countryName}: ${entry.roles.join(', ')}`)
+			.join(' | ');
+	}
+
+	function isDetailedRoleEntry(entry: unknown): entry is { countryCode: string; countryName: string; roles: string[] } {
+		if (!entry || typeof entry !== 'object') return false;
+		const record = entry as Record<string, unknown>;
+		return (
+			typeof record.countryCode === 'string' &&
+			typeof record.countryName === 'string' &&
+			Array.isArray(record.roles)
+		);
+	}
+
+	function formatEntityRolesByCountry(entityRoles: ComparisonMatch['rolesDetails'] | Array<Record<string, string[]>> | undefined): string {
+		if (!entityRoles || entityRoles.length === 0) return '-';
+
+		const rows: Array<{ country: string; roles: string[] }> = [];
+		for (const entry of entityRoles) {
+			if (isDetailedRoleEntry(entry)) {
+				rows.push({ country: entry.countryName || entry.countryCode, roles: entry.roles });
+				continue;
+			}
+
+			for (const [country, roles] of Object.entries(entry)) {
+				if (!Array.isArray(roles) || roles.length === 0) continue;
+				rows.push({ country, roles });
+			}
+		}
+
+		if (rows.length === 0) return '-';
+		return rows.map((row) => `${row.country}: ${row.roles.join(', ')}`).join(' | ');
 	}
 </script>
 
@@ -131,6 +173,7 @@
 					<th class="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">SIREN</th>
 					<th class="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Dénomination</th>
 					<th class="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Catégorie</th>
+					<th class="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Rôles PSD2</th>
 					<th class="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Ville</th>
 					<th class="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Détails</th>
 				</tr>
@@ -148,6 +191,11 @@
 							<div class="text-gray-900">{match.regafi?.denomination || match.eba?.denomination || '-'}</div>
 						</td>
 						<td class="px-4 py-3 whitespace-nowrap">{match.regafi?.categorie || match.eba?.categorie || '-'}</td>
+						<td class="px-4 py-3 max-w-xs">
+							<div class="text-gray-900 truncate" title={formatRolesByCountry(match)}>
+								{match.rolesSummary || '-'}
+							</div>
+						</td>
 						<td class="px-4 py-3 whitespace-nowrap">{match.regafi?.ville || match.eba?.ville || '-'}</td>
 						<td class="px-4 py-3">
 							<button class="text-blue-600 hover:text-blue-800 text-xs font-medium">
@@ -157,7 +205,7 @@
 					</tr>
 					{#if expanded.has(match.siren)}
 						<tr class="bg-gray-50">
-							<td colspan="6" class="px-4 py-3">
+							<td colspan="7" class="px-4 py-3">
 								{#if match.differences.length > 0}
 									<div class="space-y-1">
 										<p class="text-xs font-medium text-gray-500 mb-1">Différences :</p>
@@ -166,6 +214,21 @@
 										{/each}
 									</div>
 								{/if}
+								<div class="mt-2 bg-gray-100 p-2 rounded text-xs">
+									<p class="font-medium text-gray-700 mb-1">Rôles PSD2 par pays</p>
+									{#if (match.rolesDetails ?? []).length > 0}
+										<div class="space-y-1">
+											{#each match.rolesDetails ?? [] as entry}
+												<p>
+													<span class="font-medium">{entry.countryName}:</span>
+													{entry.roles.length > 0 ? ` ${entry.roles.join(', ')}` : ' -'}
+												</p>
+											{/each}
+										</div>
+									{:else}
+										<p>-</p>
+									{/if}
+								</div>
 								<div class="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
 									{#if match.regafi}
 										<div class="bg-blue-50 p-2 rounded">
@@ -174,6 +237,7 @@
 											<p>LEI: {match.regafi.lei || '-'}</p>
 											<p>Ville: {match.regafi.ville || '-'}</p>
 											<p>Catégorie: {match.regafi.categorie || '-'}</p>
+											<p>Rôles PSD2: {formatEntityRolesByCountry(match.regafi.rolesByCountry)}</p>
 										</div>
 									{/if}
 									{#if match.eba}
@@ -182,6 +246,7 @@
 											<p>Code: {match.eba.entityCode || '-'}</p>
 											<p>Ville: {match.eba.ville || '-'}</p>
 											<p>Catégorie: {match.eba.categorie || '-'}</p>
+											<p>Rôles PSD2: {formatEntityRolesByCountry(match.eba.rolesByCountry)}</p>
 										</div>
 									{/if}
 								</div>

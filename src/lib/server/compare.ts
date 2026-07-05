@@ -1,4 +1,11 @@
-import type { NormalizedEntity, ComparisonMatch, ComparisonOptions, ComparisonResult } from '$lib/types';
+import type {
+	NormalizedEntity,
+	ComparisonMatch,
+	ComparisonOptions,
+	ComparisonResult,
+	CountryRoleDetail,
+	CountryRoles
+} from '$lib/types';
 
 function normalize(str: string | null): string {
 	if (!str) return '';
@@ -52,6 +59,106 @@ function clampThreshold(value: number): number {
 	if (value < 0) return 0;
 	if (value > 1) return 1;
 	return value;
+}
+
+function isCountryRoleDetail(entry: CountryRoles): entry is CountryRoleDetail {
+	if (!('countryCode' in entry) || !('countryName' in entry) || !('roles' in entry)) return false;
+	return (
+		typeof entry.countryCode === 'string' &&
+		typeof entry.countryName === 'string' &&
+		Array.isArray(entry.roles)
+	);
+}
+
+function toCountryRoleDetails(entry: CountryRoles): CountryRoleDetail[] {
+	if (isCountryRoleDetail(entry)) {
+		return [
+			{
+				countryCode: entry.countryCode,
+				countryName: entry.countryName || entry.countryCode,
+				roles: entry.roles
+			}
+		];
+	}
+
+	const rows: CountryRoleDetail[] = [];
+	for (const [countryCode, roles] of Object.entries(entry)) {
+		if (!Array.isArray(roles)) continue;
+		rows.push({
+			countryCode,
+			countryName: countryCode,
+			roles: roles.filter(Boolean)
+		});
+	}
+	return rows;
+}
+
+function mergeRolesByCountry(regafi: NormalizedEntity | null, eba: NormalizedEntity | null): CountryRoleDetail[] {
+	const byCountry = new Map<string, { countryName: string; roles: Set<string> }>();
+
+	const addSource = (source: NormalizedEntity | null) => {
+		for (const entry of source?.rolesByCountry ?? []) {
+			for (const detail of toCountryRoleDetails(entry)) {
+				if (!detail.countryCode) continue;
+				if (!byCountry.has(detail.countryCode)) {
+					byCountry.set(detail.countryCode, {
+						countryName: detail.countryName || detail.countryCode,
+						roles: new Set<string>()
+					});
+				}
+
+				const bucket = byCountry.get(detail.countryCode)!;
+				if (!bucket.countryName && detail.countryName) {
+					bucket.countryName = detail.countryName;
+				}
+				for (const role of detail.roles) {
+					if (role) bucket.roles.add(role);
+				}
+			}
+		}
+	};
+
+	addSource(regafi);
+	addSource(eba);
+
+	return Array.from(byCountry.entries())
+		.map(([countryCode, value]) => ({
+			countryCode,
+			countryName: value.countryName || countryCode,
+			roles: Array.from(value.roles).sort((a, b) => a.localeCompare(b, 'fr'))
+		}))
+		.sort((a, b) => a.countryCode.localeCompare(b.countryCode));
+}
+
+function summarizeRoles(rolesByCountry: CountryRoleDetail[]): string {
+	const uniqueRoles = Array.from(
+		new Set(rolesByCountry.flatMap((entry) => entry.roles).filter(Boolean))
+	).sort((a, b) => a.localeCompare(b, 'fr'));
+
+	if (uniqueRoles.length === 0) return '';
+
+	const visible = uniqueRoles.slice(0, 3);
+	const hiddenCount = uniqueRoles.length - visible.length;
+	return hiddenCount > 0 ? `${visible.join(', ')} +${hiddenCount}` : visible.join(', ');
+}
+
+function buildMatch(
+	siren: string,
+	regafi: NormalizedEntity | null,
+	eba: NormalizedEntity | null,
+	status: ComparisonMatch['status'],
+	differences: string[]
+): ComparisonMatch {
+	const rolesDetails = mergeRolesByCountry(regafi, eba);
+	return {
+		siren,
+		regafi,
+		eba,
+		status,
+		differences,
+		rolesDetails,
+		rolesSummary: summarizeRoles(rolesDetails)
+	};
 }
 
 function buildSummary(matches: ComparisonMatch[], regafiCount: number, ebaCount: number): ComparisonResult['summary'] {
@@ -127,7 +234,7 @@ export function compare(
 			continue;
 		}
 
-		matches.push({ siren, regafi, eba, status, differences });
+		matches.push(buildMatch(siren, regafi, eba, status, differences));
 	}
 
 	return { matches, summary: buildSummary(matches, regafiEntities.length, ebaEntities.length) };
@@ -152,39 +259,27 @@ export function compare(
 		if (bestIndex >= 0 && bestScore >= nameSimilarityThreshold) {
 			usedEbaIndexes.add(bestIndex);
 			const ebaEntity = ebaEntities[bestIndex];
-			matches.push({
-				siren: regafiEntity.siren || ebaEntity.siren,
-				regafi: regafiEntity,
-				eba: ebaEntity,
-				status: 'match',
-				differences: []
-			});
+			matches.push(
+				buildMatch(regafiEntity.siren || ebaEntity.siren, regafiEntity, ebaEntity, 'match', [])
+			);
 			continue;
 		}
 
-		matches.push({
-			siren: regafiEntity.siren,
-			regafi: regafiEntity,
-			eba: null,
-			status: 'onlyInRegafi',
-			differences: [
+		matches.push(
+			buildMatch(regafiEntity.siren, regafiEntity, null, 'onlyInRegafi', [
 				`Aucune dénomination EBA avec une similarité >= ${(nameSimilarityThreshold * 100).toFixed(0)}%`
-			]
-		});
+			])
+		);
 	}
 
 	for (let index = 0; index < ebaEntities.length; index += 1) {
 		if (usedEbaIndexes.has(index)) continue;
 		const ebaEntity = ebaEntities[index];
-		matches.push({
-			siren: ebaEntity.siren,
-			regafi: null,
-			eba: ebaEntity,
-			status: 'onlyInEba',
-			differences: [
+		matches.push(
+			buildMatch(ebaEntity.siren, null, ebaEntity, 'onlyInEba', [
 				`Aucune dénomination REGAFI avec une similarité >= ${(nameSimilarityThreshold * 100).toFixed(0)}%`
-			]
-		});
+			])
+		);
 	}
 
 	return { matches, summary: buildSummary(matches, regafiEntities.length, ebaEntities.length) };

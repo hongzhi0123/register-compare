@@ -10,6 +10,9 @@ export type DatasetColumnKey =
 	| 'ville'
 	| 'pays'
 	| 'categorie'
+	| 'rolesSummary'
+	| 'rolesCountry'
+	| 'rolesName'
 	| 'entityCode'
 	| 'lei'
 	| 'idReferentiel';
@@ -132,6 +135,62 @@ async function readDataset(
 	return parsed as NormalizedEntity[];
 }
 
+function getRoleCountryAndNamePairs(entity: NormalizedEntity): Array<{ country: string; role: string }> {
+	const pairs: Array<{ country: string; role: string }> = [];
+	for (const entry of entity.rolesByCountry ?? []) {
+		if ('roles' in entry && Array.isArray(entry.roles)) {
+			const country = String(entry.countryCode ?? '').trim();
+			if (!country) continue;
+			for (const role of entry.roles) {
+				const normalizedRole = String(role ?? '').trim();
+				if (normalizedRole) pairs.push({ country, role: normalizedRole });
+			}
+			continue;
+		}
+
+		for (const [country, roles] of Object.entries(entry)) {
+			const normalizedCountry = String(country ?? '').trim();
+			if (!normalizedCountry || !Array.isArray(roles)) continue;
+			for (const role of roles) {
+				const normalizedRole = String(role ?? '').trim();
+				if (normalizedRole) pairs.push({ country: normalizedCountry, role: normalizedRole });
+			}
+		}
+	}
+
+	return pairs;
+}
+
+function getEntityValuesForKey(entity: NormalizedEntity, key: DatasetColumnKey): string[] {
+	if (key === 'rolesCountry') {
+		return Array.from(new Set(getRoleCountryAndNamePairs(entity).map((pair) => pair.country)));
+	}
+
+	if (key === 'rolesName') {
+		return Array.from(new Set(getRoleCountryAndNamePairs(entity).map((pair) => pair.role)));
+	}
+
+	const value = String(entity[key] ?? '').trim();
+	return value ? [value] : [];
+}
+
+function hasRoleCountryAndRoleMatch(entity: NormalizedEntity, countries: string[], roles: string[]): boolean {
+	if (countries.length === 0 || roles.length === 0) return true;
+	const countrySet = new Set(countries.map((value) => value.trim().toLowerCase()).filter(Boolean));
+	const roleSet = new Set(roles.map((value) => value.trim().toLowerCase()).filter(Boolean));
+	if (countrySet.size === 0 || roleSet.size === 0) return true;
+
+	for (const pair of getRoleCountryAndNamePairs(entity)) {
+		const country = pair.country.trim().toLowerCase();
+		const role = pair.role.trim().toLowerCase();
+		if (countrySet.has(country) && roleSet.has(role)) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
 export async function getLatestDatasetId(kind: DatasetKind): Promise<string | null> {
 	try {
 		const files = await readdir(STORAGE_DIR);
@@ -179,8 +238,8 @@ export async function getDatasetPage(
 		if (!query) continue;
 
 		filtered = filtered.filter((entity) => {
-			const value = String(entity[key] ?? '').toLowerCase();
-			return value.includes(query);
+			const values = getEntityValuesForKey(entity, key).map((value) => value.toLowerCase());
+			return values.some((value) => value.includes(query));
 		});
 	}
 
@@ -191,15 +250,21 @@ export async function getDatasetPage(
 
 		const values = new Set<string>();
 		for (const entity of filtered) {
-			const value = String(entity[key] ?? '').trim();
-			if (value) values.add(value);
+			for (const value of getEntityValuesForKey(entity, key)) {
+				if (value) values.add(value);
+			}
 		}
 		filterOptions[key] = Array.from(values).sort((a, b) => a.localeCompare(b, 'fr', { sensitivity: 'base' }));
 	}
 
+	const selectedCountries = params.selectFilters.rolesCountry ?? [];
+	const selectedRoles = params.selectFilters.rolesName ?? [];
+	filtered = filtered.filter((entity) => hasRoleCountryAndRoleMatch(entity, selectedCountries, selectedRoles));
+
 	progress?.running(84, 'Application des filtres de sélection...');
 	for (const [rawKey, rawValue] of Object.entries(params.selectFilters)) {
 		const key = rawKey as DatasetColumnKey;
+		if (key === 'rolesCountry' || key === 'rolesName') continue;
 		const selectedValues = (rawValue || []).map((value) => value.trim().toLowerCase()).filter(Boolean);
 		if (selectedValues.length === 0 || selectedValues.includes('__all__')) continue;
 
@@ -208,10 +273,10 @@ export async function getDatasetPage(
 		const exactValues = selectedValues.filter((value) => value !== '__empty__' && value !== '__non_empty__');
 
 		filtered = filtered.filter((entity) => {
-			const value = String(entity[key] ?? '').trim().toLowerCase();
-			if (exactValues.includes(value)) return true;
-			if (value === '') return hasEmpty;
-			if (value !== '' && hasNonEmpty) return true;
+			const values = getEntityValuesForKey(entity, key).map((value) => value.toLowerCase());
+			if (exactValues.some((value) => values.includes(value))) return true;
+			if (values.length === 0) return hasEmpty;
+			if (values.length > 0 && hasNonEmpty) return true;
 			return false;
 		});
 	}
@@ -222,8 +287,8 @@ export async function getDatasetPage(
 			? filtered
 			: [...filtered].sort((a, b) => {
 				const sortKey = params.sortKey === 'none' ? 'siren' : params.sortKey;
-				const left = String(a[sortKey] || '');
-				const right = String(b[sortKey] || '');
+				const left = getEntityValuesForKey(a, sortKey).join(' | ');
+				const right = getEntityValuesForKey(b, sortKey).join(' | ');
 				const result = left.localeCompare(right, 'fr', { sensitivity: 'base' });
 				return params.sortDir === 'desc' ? -result : result;
 			});

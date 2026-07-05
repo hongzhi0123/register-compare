@@ -55,6 +55,20 @@ export interface RegafiRecord {
 	record_timestamp: string;
 }
 
+export type CountryRoles =
+	| Record<string, string[]>
+	| {
+			countryCode: string;
+			countryName: string;
+			roles: string[];
+	  };
+
+export interface CountryRoleDetail {
+	countryCode: string;
+	countryName: string;
+	roles: string[];
+}
+
 export interface NormalizedEntity {
 	siren: string;
 	denomination: string;
@@ -66,6 +80,8 @@ export interface NormalizedEntity {
 	entityCode?: string;
 	source: 'regafi' | 'eba';
 	authorisations?: string | null;
+	rolesByCountry?: CountryRoles[];
+	rolesSummary?: string;
 }
 
 export interface ComparisonMatch {
@@ -74,6 +90,8 @@ export interface ComparisonMatch {
 	eba: NormalizedEntity | null;
 	status: ComparisonStatus;
 	differences: string[];
+	rolesSummary?: string;
+	rolesDetails?: CountryRoleDetail[];
 }
 
 export interface ComparisonOptions {

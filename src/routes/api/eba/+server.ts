@@ -8,6 +8,9 @@ const ALLOWED_FILTER_KEYS = [
 	'ville',
 	'pays',
 	'categorie',
+	'rolesSummary',
+	'rolesCountry',
+	'rolesName',
 	'entityCode',
 	'lei',
 	'idReferentiel'
