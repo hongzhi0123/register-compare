@@ -1,11 +1,10 @@
 import { json } from '@sveltejs/kit';
-import { getDatasetPage, getLatestDatasetPage, persistDataset } from '$lib/server/dataset-store';
+import { getDatasetPage, getLatestDatasetPage, persistDataset, getFilteredEntities, entitiesToCsv } from '$lib/server/dataset-store';
 import {
 	fetchRegafiEntities,
 	parseRegafiJson,
 	normalizeRegafiEntity,
-	normalizeFlatEntity,
-	keepFrenchEntities
+	normalizeFlatEntity
 } from '$lib/server/regafi';
 
 const ALLOWED_FILTER_KEYS = [
@@ -73,12 +72,12 @@ export async function POST({ request }) {
 		const body = text ? JSON.parse(text) : null;
 
 		if (Array.isArray(body)) {
-			const entities = keepFrenchEntities(body.map(normalizeFlatEntity));
+			const entities = body.map(normalizeFlatEntity);
 			const stored = await persistDataset('regafi', entities);
 			return json({ success: true, datasetId: stored.datasetId, count: stored.count });
 		}
 		if (body.results) {
-			const entities = keepFrenchEntities(body.results.map(normalizeRegafiEntity));
+			const entities = body.results.map(normalizeRegafiEntity);
 			const stored = await persistDataset('regafi', entities);
 			return json({ success: true, datasetId: stored.datasetId, count: stored.count });
 		}
@@ -126,7 +125,7 @@ export async function GET({ url }) {
 		if (latest) {
 			const result = await getLatestDatasetPage('regafi', {
 				page: Number.isFinite(page) && page > 0 ? page : 1,
-				pageSize: Number.isFinite(pageSize) && pageSize > 0 ? Math.min(pageSize, 100) : 10,
+				pageSize: Number.isFinite(pageSize) && pageSize > 0 ? Math.min(pageSize, 100000) : 10,
 				textFilters,
 				selectFilters,
 				sortKey,
@@ -136,13 +135,30 @@ export async function GET({ url }) {
 			return json({ success: true, ...result });
 		}
 
+		if (url.searchParams.get('export') === 'csv') {
+			if (!datasetId) {
+				return new Response('datasetId requis', { status: 400 });
+			}
+			const columnsParam = url.searchParams.get('columns') || '';
+			const columnKeys = columnsParam ? columnsParam.split(',').filter((k) => ALLOWED_FILTER_KEYS.includes(k as AllowedFilterKey)) : [...ALLOWED_FILTER_KEYS];
+			const entities = await getFilteredEntities('regafi', datasetId, textFilters, selectFilters, sortKey, sortDir);
+			const csv = entitiesToCsv(entities, columnKeys);
+			return new Response(csv, {
+				status: 200,
+				headers: {
+					'Content-Type': 'text/csv; charset=utf-8',
+					'Content-Disposition': `attachment; filename="regafi-export-${Date.now()}.csv"`
+				}
+			});
+		}
+
 		if (!datasetId) {
 			return json({ success: false, error: 'datasetId requis' }, { status: 400 });
 		}
 
 		const result = await getDatasetPage('regafi', datasetId, {
 			page: Number.isFinite(page) && page > 0 ? page : 1,
-			pageSize: Number.isFinite(pageSize) && pageSize > 0 ? Math.min(pageSize, 100) : 10,
+			pageSize: Number.isFinite(pageSize) && pageSize > 0 ? Math.min(pageSize, 100000) : 10,
 			textFilters,
 			selectFilters,
 			sortKey,

@@ -15,7 +15,9 @@
 		| 'rolesName'
 		| 'entityCode'
 		| 'lei'
-		| 'idReferentiel';
+		| 'idReferentiel'
+		| 'cib'
+		| 'entityType';
 	type SortKey = DatasetColumnKey | 'none';
 	type SortDirection = 'asc' | 'desc';
 	type FilterType = 'none' | 'text' | 'select' | 'text-select';
@@ -84,7 +86,10 @@
 			widthClass: 'w-64',
 			cellClass: 'truncate max-w-64'
 		},
-		{ key: 'entityCode', label: 'Code EBA', sortable: true, filterType: 'text-select', widthClass: 'w-36', cellClass: 'font-mono text-xs' }
+		{ key: 'idReferentiel', label: 'ID référentiel', sortable: true, filterType: 'text-select', widthClass: 'w-36', cellClass: 'font-mono text-xs' },
+		{ key: 'cib', label: 'CIB', sortable: true, filterType: 'text-select', widthClass: 'w-36', cellClass: 'font-mono text-xs' },
+		{ key: 'lei', label: 'LEI', sortable: true, filterType: 'text-select', widthClass: 'w-44', cellClass: 'font-mono text-xs' },
+		{ key: 'entityType', label: "Type d'entité", sortable: true, filterType: 'select', widthClass: 'w-36' }
 	];
 
 	const REGAFI_COLUMNS: TableColumn[] = [
@@ -300,19 +305,31 @@
 		return `"${escaped}"`;
 	}
 
-	async function exportDatasetTableToCsv(kind: DatasetKind): Promise<void> {
-		const columns = kind === 'eba' ? EBA_COLUMNS : REGAFI_COLUMNS;
+	function downloadCsvUrl(url: string, filename: string) {
+		const link = document.createElement('a');
+		link.href = url;
+		link.download = filename;
+		document.body.appendChild(link);
+		link.click();
+		document.body.removeChild(link);
+	}
+
+	async function exportDatasetTableToCsv(kind: DatasetKind, selectedColumns: Set<DatasetColumnKey>): Promise<void> {
+		const allColumns = kind === 'eba' ? EBA_COLUMNS : REGAFI_COLUMNS;
+		const columns = allColumns.filter((c) => selectedColumns.has(c.key));
+		if (columns.length === 0) {
+			error = 'Sélectionnez au moins une colonne à exporter.';
+			return;
+		}
 		const isEba = kind === 'eba';
-		const setLoading = isEba ? (value: boolean) => (ebaExportLoading = value) : (value: boolean) => (regafiExportLoading = value);
+		const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
 
-		setLoading(true);
-		try {
-			const items = compareModeActive
-				? (isEba ? ebaComparisonEntities : regafiComparisonEntities)
-				: await fetchEntities(kind, true);
-
-			if (items.length === 0) return;
-
+		if (compareModeActive) {
+			const items = isEba ? ebaComparisonEntities : regafiComparisonEntities;
+			if (items.length === 0) {
+				error = 'Aucune donnée à exporter.';
+				return;
+			}
 			const header = columns.map((column) => escapeCsv(column.label)).join(',');
 			const rows = items.map((entity) =>
 				columns
@@ -322,24 +339,56 @@
 					})
 					.join(',')
 			);
-
 			const csvContent = [header, ...rows].join('\n');
 			const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
 			const url = URL.createObjectURL(blob);
-			const link = document.createElement('a');
-			const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-			link.href = url;
-			link.download = `${kind}-${compareModeActive ? 'comparison' : 'filtered'}-${timestamp}.csv`;
-			document.body.appendChild(link);
-			link.click();
-			document.body.removeChild(link);
+			downloadCsvUrl(url, `${kind}-comparison-${timestamp}.csv`);
 			URL.revokeObjectURL(url);
-		} finally {
-			setLoading(false);
+			return;
 		}
+
+		const datasetId = isEba ? ebaDatasetId : regafiDatasetId;
+		if (!datasetId) {
+			error = 'Aucun jeu de données chargé.';
+			return;
+		}
+
+		const columnKeys = columns.map((c) => c.key).join(',');
+		const params = new URLSearchParams({
+			export: 'csv',
+			datasetId,
+			columns: columnKeys,
+			sortKey: isEba ? ebaSortKey : regafiSortKey,
+			sortDir: isEba ? ebaSortDir : regafiSortDir,
+			textFilters: toFilterParams(isEba ? ebaTextFilters : regafiTextFilters),
+			selectFilters: toFilterParams(isEba ? ebaSelectFilters : regafiSelectFilters)
+		});
+
+		downloadCsvUrl(`/api/${kind}?${params}`, `${kind}-filtered-${timestamp}.csv`);
 	}
 
 	let error = $state<string | null>(null);
+
+	let exportDialogOpen = $state(false);
+	let exportKind = $state<DatasetKind>('eba');
+	let exportSelectedColumns = $state<Set<DatasetColumnKey>>(new Set());
+
+	function openExportDialog(kind: DatasetKind) {
+		const columns = kind === 'eba' ? EBA_COLUMNS : REGAFI_COLUMNS;
+		exportKind = kind;
+		exportSelectedColumns = new Set(columns.map((c) => c.key));
+		exportDialogOpen = true;
+	}
+
+	function toggleExportColumn(key: DatasetColumnKey) {
+		const next = new Set(exportSelectedColumns);
+		if (next.has(key)) {
+			next.delete(key);
+		} else {
+			next.add(key);
+		}
+		exportSelectedColumns = next;
+	}
 
 	let ebaDatasetId = $state<string | null>(null);
 	let regafiDatasetId = $state<string | null>(null);
@@ -455,7 +504,7 @@
 			const params = new URLSearchParams({
 				datasetId,
 				page: String(page),
-				pageSize: '100',
+				pageSize: '100000',
 				sortKey,
 				sortDir,
 				textFilters: toFilterParams(textFilters),
@@ -487,14 +536,43 @@
 	}
 
 	async function compareDatasets(
+		options: ComparisonOptions
+	): Promise<ComparisonResult>;
+	async function compareDatasets(
 		regafi: NormalizedEntity[],
 		eba: NormalizedEntity[],
 		options: ComparisonOptions
+	): Promise<ComparisonResult>;
+	async function compareDatasets(
+		arg1: ComparisonOptions | NormalizedEntity[],
+		arg2?: NormalizedEntity[],
+		arg3?: ComparisonOptions
 	): Promise<ComparisonResult> {
+		if (Array.isArray(arg1)) {
+			const response = await fetch('/api/compare', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ regafi: arg1, eba: arg2, options: arg3 })
+			});
+			const data = await response.json();
+			if (!data.success) {
+				throw new Error(data.error || 'Erreur de comparaison');
+			}
+			return data as ComparisonResult;
+		}
+
 		const response = await fetch('/api/compare', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ regafi, eba, options })
+			body: JSON.stringify({
+				ebaDatasetId,
+				regafiDatasetId,
+				ebaTextFilters,
+				ebaSelectFilters,
+				regafiTextFilters,
+				regafiSelectFilters,
+				options: arg1
+			})
 		});
 
 		const data = await response.json();
@@ -524,12 +602,7 @@
 		error = null;
 
 		try {
-			const [ebaFiltered, regafiFiltered] = await Promise.all([
-				fetchEntities('eba', true),
-				fetchEntities('regafi', true)
-			]);
-
-			const data = await compareDatasets(regafiFiltered, ebaFiltered, {
+			const data = await compareDatasets({
 				columns,
 				nameSimilarityThreshold: nameSimilarityPercent / 100
 			});
@@ -1172,6 +1245,67 @@
 			{/if}
 		</section>
 
+		{#if compareLoading}
+			<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+				<div class="w-full max-w-md rounded-lg bg-white p-6 shadow-2xl">
+					<div class="flex items-start gap-3">
+						<div class="mt-0.5 h-6 w-6 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900"></div>
+						<div class="flex-1">
+							<h3 class="text-base font-semibold text-gray-900">Comparaison en cours</h3>
+							<p class="mt-1 text-sm text-gray-600">
+								Récupération des données filtrées puis lancement de la comparaison...
+							</p>
+						</div>
+					</div>
+				</div>
+			</div>
+		{/if}
+
+		{#if exportDialogOpen}
+			<div role="presentation" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onclick={() => (exportDialogOpen = false)} onkeydown={(e) => { if (e.key === 'Escape') exportDialogOpen = false; }}>
+				<div role="dialog" aria-modal="true" tabindex="-1" class="w-full max-w-md rounded-lg bg-white p-6 shadow-2xl" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
+					<h3 class="text-base font-semibold text-gray-900">Colonnes à exporter</h3>
+					<p class="mt-1 text-sm text-gray-500">
+						Sélectionnez les colonnes à inclure dans le fichier CSV
+						{exportKind === 'eba' ? 'EBA' : 'REGAFI'}.
+					</p>
+					<div class="mt-4 space-y-2 max-h-72 overflow-y-auto">
+						{#each (exportKind === 'eba' ? EBA_COLUMNS : REGAFI_COLUMNS) as column}
+							<label class="flex items-center gap-2 rounded px-1 py-1 text-sm hover:bg-gray-50 cursor-pointer">
+								<input
+									type="checkbox"
+									class="h-4 w-4"
+									checked={exportSelectedColumns.has(column.key)}
+									onchange={() => toggleExportColumn(column.key)}
+								/>
+								<span>{column.label}</span>
+							</label>
+						{/each}
+					</div>
+					<div class="mt-4 flex items-center justify-end gap-2">
+						<button
+							type="button"
+							class="rounded border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+							onclick={() => (exportDialogOpen = false)}
+						>
+							Annuler
+						</button>
+						<button
+							type="button"
+							class="rounded bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-40"
+							disabled={exportSelectedColumns.size === 0}
+							onclick={() => {
+								exportDialogOpen = false;
+								void exportDatasetTableToCsv(exportKind, exportSelectedColumns);
+							}}
+						>
+							Exporter
+						</button>
+					</div>
+				</div>
+			</div>
+		{/if}
+
 		<section class="bg-white rounded-lg border border-gray-200 p-6">
 			<div class="border border-gray-200 rounded-lg overflow-hidden">
 				<div class="relative bg-blue-50 px-4 py-3 border-b border-gray-200 flex items-center justify-between gap-4">
@@ -1196,7 +1330,7 @@
 						<button
 							type="button"
 							class="rounded border border-blue-300 px-3 py-2 text-xs font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-40"
-							onclick={() => void exportDatasetTableToCsv('eba')}
+							onclick={() => openExportDialog('eba')}
 							disabled={ebaExportLoading || !ebaDatasetId}
 						>
 							{ebaExportLoading ? 'Export...' : 'Exporter les filtres'}
@@ -1419,7 +1553,7 @@
 						<button
 							type="button"
 							class="rounded border border-red-300 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-40"
-							onclick={() => void exportDatasetTableToCsv('regafi')}
+							onclick={() => openExportDialog('regafi')}
 							disabled={regafiExportLoading || !regafiDatasetId}
 						>
 							{regafiExportLoading ? 'Export...' : 'Exporter les filtres'}

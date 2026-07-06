@@ -343,6 +343,32 @@ function isFrenchCountry(country: string | null): boolean {
 }
 
 function normalizeEbaEntity(raw: Record<string, unknown>): NormalizedEntity | null {
+	const companyId = raw['company_id'];
+	if (companyId && typeof companyId === 'string' && companyId.trim()) {
+		const activity = raw['activity'];
+		let categorie: string | null = null;
+		if (Array.isArray(activity)) {
+			categorie = activity.filter((a): a is string => typeof a === 'string' && a.length > 0).join(', ');
+		} else if (typeof activity === 'string' && activity.trim()) {
+			categorie = activity.trim();
+		}
+
+		return {
+			siren: companyId.trim(),
+			denomination: raw['denomination'] ? String(raw['denomination']).trim() : '',
+			ville: raw['ville'] ? String(raw['ville']).trim() : null,
+			pays: raw['country'] ? String(raw['country']).trim() : null,
+			categorie,
+			lei: raw['lei'] ? String(raw['lei']).trim() : null,
+			idReferentiel: raw['reference_id'] ? String(raw['reference_id']).trim() : undefined,
+			cib: raw['cib'] ? String(raw['cib']).trim() : null,
+			entityType: raw['entity_type'] ? String(raw['entity_type']).trim() : null,
+			source: 'eba',
+			rolesByCountry: [],
+			rolesSummary: ''
+		};
+	}
+
 	if (raw.CA_OwnerID !== 'FR_ACPR') return null;
 
 	const props = extractProperties(raw);

@@ -4,6 +4,20 @@ import { join } from 'node:path';
 import type { NormalizedEntity } from '$lib/types';
 
 export type DatasetKind = 'eba' | 'regafi';
+
+const COLUMN_LABELS: Record<string, string> = {
+	siren: 'SIREN',
+	denomination: 'Dénomination',
+	ville: 'Ville',
+	pays: 'Pays',
+	categorie: 'Catégorie',
+	rolesSummary: 'Rôles PSD2',
+	lei: 'LEI',
+	idReferentiel: 'ID référentiel',
+	entityCode: 'Code EBA',
+	cib: 'CIB',
+	entityType: "Type d'entité"
+};
 export type DatasetColumnKey =
 	| 'siren'
 	| 'denomination'
@@ -15,7 +29,9 @@ export type DatasetColumnKey =
 	| 'rolesName'
 	| 'entityCode'
 	| 'lei'
-	| 'idReferentiel';
+	| 'idReferentiel'
+	| 'cib'
+	| 'entityType';
 export type DatasetSortKey = DatasetColumnKey | 'none';
 export type DatasetSortDirection = 'asc' | 'desc';
 
@@ -345,4 +361,72 @@ export async function getLatestDatasetPage(
 	progress?.running(10, `Dernier dataset trouvé: ${datasetId}`);
 	const page = await getDatasetPage(kind, datasetId, params);
 	return { datasetId, ...page };
+}
+
+export async function getFilteredEntities(
+	kind: DatasetKind,
+	datasetId: string,
+	textFilters: Partial<Record<DatasetColumnKey, string>>,
+	selectFilters: Partial<Record<DatasetColumnKey, string[]>>,
+	sortKey: DatasetSortKey,
+	sortDir: DatasetSortDirection
+): Promise<NormalizedEntity[]> {
+	const entities = await readDataset(kind, datasetId);
+
+	let filtered = entities;
+	for (const [rawKey, rawValue] of Object.entries(textFilters)) {
+		const key = rawKey as DatasetColumnKey;
+		const query = (rawValue || '').trim().toLowerCase();
+		if (!query) continue;
+		filtered = filtered.filter((entity) => {
+			const values = getEntityValuesForKey(entity, key).map((value) => value.toLowerCase());
+			return values.some((value) => value.includes(query));
+		});
+	}
+
+	for (const [rawKey, rawValue] of Object.entries(selectFilters)) {
+		const key = rawKey as DatasetColumnKey;
+		const selectedValues = rawValue || [];
+		if (selectedValues.length === 0) continue;
+		filtered = filtered.filter((entity) => {
+			const values = getEntityValuesForKey(entity, key);
+			return matchesSelectValues(values, selectedValues);
+		});
+	}
+
+	if (sortKey !== 'none') {
+		filtered = [...filtered].sort((a, b) => {
+			const left = getEntityValuesForKey(a, sortKey).join(' | ');
+			const right = getEntityValuesForKey(b, sortKey).join(' | ');
+			const result = left.localeCompare(right, 'fr', { sensitivity: 'base' });
+			return sortDir === 'desc' ? -result : result;
+		});
+	}
+
+	return filtered;
+}
+
+function escapeCsv(value: string): string {
+	return `"${value.replace(/"/g, '""')}"`;
+}
+
+export function entitiesToCsv(entities: NormalizedEntity[], columnKeys: string[]): string {
+	const labels = columnKeys.map((key) => COLUMN_LABELS[key] || key);
+	const header = labels.map((label) => escapeCsv(label)).join(',');
+
+	const rows = entities.map((entity) =>
+		columnKeys
+			.map((key) => {
+				if (key === 'rolesSummary') {
+					return entity.rolesSummary || '';
+				}
+				if (key === 'rolesCountry' || key === 'rolesName') return '';
+				const raw = (entity as unknown as Record<string, unknown>)[key];
+				return raw === null || raw === undefined ? '' : String(raw);
+			})
+			.map((value) => escapeCsv(value))
+			.join(',')
+	);
+
+	return [header, ...rows].join('\n');
 }

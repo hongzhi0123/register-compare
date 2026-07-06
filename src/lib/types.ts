@@ -78,6 +78,8 @@ export interface NormalizedEntity {
 	lei: string | null;
 	idReferentiel?: string;
 	entityCode?: string;
+	cib?: string | null;
+	entityType?: string | null;
 	source: 'regafi' | 'eba';
 	authorisations?: string | null;
 	rolesByCountry?: CountryRoles[];

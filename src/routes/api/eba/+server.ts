@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit';
-import { getDatasetLoadProgress, getDatasetPage, getLatestDatasetPage, persistDataset } from '$lib/server/dataset-store';
+import { getDatasetLoadProgress, getDatasetPage, getLatestDatasetPage, persistDataset, getFilteredEntities, entitiesToCsv } from '$lib/server/dataset-store';
 import { parseEbaStream } from '$lib/server/eba';
 
 const ALLOWED_FILTER_KEYS = [
@@ -13,7 +13,9 @@ const ALLOWED_FILTER_KEYS = [
 	'rolesName',
 	'entityCode',
 	'lei',
-	'idReferentiel'
+	'idReferentiel',
+	'cib',
+	'entityType'
 ] as const;
 
 type AllowedFilterKey = (typeof ALLOWED_FILTER_KEYS)[number];
@@ -107,7 +109,7 @@ export async function GET({ url }) {
 		if (latest) {
 			const result = await getLatestDatasetPage('eba', {
 				page: Number.isFinite(page) && page > 0 ? page : 1,
-				pageSize: Number.isFinite(pageSize) && pageSize > 0 ? Math.min(pageSize, 100) : 10,
+				pageSize: Number.isFinite(pageSize) && pageSize > 0 ? Math.min(pageSize, 100000) : 10,
 				textFilters,
 				selectFilters,
 				sortKey,
@@ -118,13 +120,30 @@ export async function GET({ url }) {
 			return json({ success: true, ...result });
 		}
 
+		if (url.searchParams.get('export') === 'csv') {
+			if (!datasetId) {
+				return new Response('datasetId requis', { status: 400 });
+			}
+			const columnsParam = url.searchParams.get('columns') || '';
+			const columnKeys = columnsParam ? columnsParam.split(',').filter((k) => ALLOWED_FILTER_KEYS.includes(k as AllowedFilterKey)) : [...ALLOWED_FILTER_KEYS];
+			const entities = await getFilteredEntities('eba', datasetId, textFilters, selectFilters, sortKey, sortDir);
+			const csv = entitiesToCsv(entities, columnKeys);
+			return new Response(csv, {
+				status: 200,
+				headers: {
+					'Content-Type': 'text/csv; charset=utf-8',
+					'Content-Disposition': `attachment; filename="eba-export-${Date.now()}.csv"`
+				}
+			});
+		}
+
 		if (!datasetId) {
 			return json({ success: false, error: 'datasetId requis' }, { status: 400 });
 		}
 
 		const result = await getDatasetPage('eba', datasetId, {
 			page: Number.isFinite(page) && page > 0 ? page : 1,
-			pageSize: Number.isFinite(pageSize) && pageSize > 0 ? Math.min(pageSize, 100) : 10,
+			pageSize: Number.isFinite(pageSize) && pageSize > 0 ? Math.min(pageSize, 100000) : 10,
 			textFilters,
 			selectFilters,
 			sortKey,

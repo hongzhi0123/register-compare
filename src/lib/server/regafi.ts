@@ -20,7 +20,7 @@ function normalizeCountryName(country: string | null): string {
 	if (!country) return 'Pays inconnu';
 	const normalized = country.trim();
 	if (!normalized) return 'Pays inconnu';
-	if (isFrenchCountry(normalized)) return 'France';
+	if (isFrenchCountry(normalized)) return 'FRANCE';
 	return normalized;
 }
 
@@ -207,7 +207,6 @@ export async function fetchRegafiEntities(apiKey?: string): Promise<NormalizedEn
 
 	while (true) {
 		const params = new URLSearchParams({
-			where: "pays='FRANCE'",
 			limit: String(limit),
 			offset: String(offset)
 		});
@@ -244,9 +243,9 @@ export function parseRegafiJson(json: string): NormalizedEntity[] {
 
   const first = records[0] as Record<string, unknown>;
   if (first.fields && typeof first.fields === 'object') {
-		return keepFrenchEntities((records as RegafiRecord[]).map(normalizeRegafiEntity));
+		return (records as RegafiRecord[]).map(normalizeRegafiEntity);
   } else {
-		return keepFrenchEntities(records.map((r) => normalizeFlatEntity(r as Record<string, unknown>)));
+		return records.map((r) => normalizeFlatEntity(r as Record<string, unknown>));
   }
 }
 
