@@ -83,6 +83,22 @@
 	let exportSide = $state<Side>('left');
 	let exportSelectedColumns = $state<Set<string>>(new Set());
 
+	// --- Roles tooltip helpers ---
+	function getAllRoles(entity: NormalizedEntity): string[] {
+		return Array.from(
+			new Set(
+				(entity.rolesByCountry ?? []).flatMap((entry) => {
+					if ('roles' in entry && Array.isArray(entry.roles)) return entry.roles;
+					return Object.values(entry).flatMap((v) => (Array.isArray(v) ? v : []));
+				}).filter(Boolean)
+			)
+		).sort((a, b) => a.localeCompare(b, 'fr'));
+	}
+
+	function hasTruncatedRoles(entity: NormalizedEntity): boolean {
+		return getAllRoles(entity).length > 3;
+	}
+
 	// --- Comparison mode ---
 	const compareModeActive = $derived(comparisonMatches.length > 0);
 
@@ -225,10 +241,10 @@
 					visibleColumns[side] = new Set(JSON.parse(saved));
 				} catch { visibleColumns[side] = new Set(); }
 			} else {
-				visibleColumns[side] = new Set(meta?.columns.map((c) => c.key) ?? []);
+				visibleColumns[side] = new Set((meta?.columns ?? []).filter((c) => c.key !== 'rolesCountry').map((c) => c.key));
 			}
 		} else {
-			visibleColumns[side] = new Set(meta?.columns.map((c) => c.key) ?? []);
+			visibleColumns[side] = new Set((meta?.columns ?? []).filter((c) => c.key !== 'rolesCountry').map((c) => c.key));
 		}
 
 		// Auto-load latest dataset
@@ -358,7 +374,7 @@
 	function showAllColumns(side: Side) {
 		const src = sources[side];
 		if (!src) return;
-		visibleColumns[side] = new Set(src.columns.map((c) => c.key));
+		visibleColumns[side] = new Set(src.columns.filter((c) => c.key !== 'rolesCountry').map((c) => c.key));
 	}
 
 	function hideAllColumns(side: Side) {
@@ -894,7 +910,21 @@
 									<tr class="hover:bg-gray-50">
 										{#each getVisibleColumns(s) as col (col.key)}
 											<td class="px-3 py-2 whitespace-nowrap text-gray-900" class:font-mono={col.key === 'siren' || col.key === 'lei'}>
-												{getCellValue(entity, col.key)}
+												{#if col.key === 'rolesSummary' && hasTruncatedRoles(entity)}
+	<span class="roles-cell group relative cursor-help">
+		{getCellValue(entity, col.key)}
+		<span class="roles-tooltip invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all delay-[1500ms] duration-150 absolute bottom-full left-0 z-50 mb-1 max-w-xs rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-lg">
+			<span class="mb-1 block font-semibold text-gray-700">{entity.denomination || entity.siren}</span>
+			<span class="flex flex-wrap gap-1 text-gray-600">
+				{#each getAllRoles(entity) as role}
+					<span class="rounded bg-blue-100 px-1.5 py-0.5 text-xs text-blue-800">{role}</span>
+				{/each}
+			</span>
+		</span>
+	</span>
+{:else}
+	{getCellValue(entity, col.key)}
+{/if}
 											</td>
 										{/each}
 									</tr>

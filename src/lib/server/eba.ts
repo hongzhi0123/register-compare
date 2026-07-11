@@ -1,4 +1,4 @@
-﻿import type { NormalizedEntity } from '$lib/types';
+import type { NormalizedEntity } from '$lib/types';
 import { extractJsonObjects } from './stream-json';
 
 function normalizeCountryCode(country: string | null): string {
@@ -9,9 +9,32 @@ function normalizeCountryCode(country: string | null): string {
 	return normalized;
 }
 
+const PSD2_SERVICE_LABELS: Record<string, string> = {
+	PS_010: 'Cash placement',
+	PS_020: 'Cash withdrawals',
+	'PS_03A': 'Direct debits',
+	'PS_03B': 'Payment cards',
+	'PS_03C': 'Credit transfers',
+	'PS_03D': 'Payment transactions',
+	'PS_03E': 'Credit transfers (other)',
+	PS_040: 'Issuing instruments',
+	PS_050: 'Acquiring transactions',
+	PS_060: 'Money remittance',
+	PS_070: 'Payment initiation (PISP)',
+	PS_080: 'Account information (AISP)',
+};
+
 function mapRoleCodeToLabel(code: string): string {
-	if (code === 'PS_070' || code === 'PSP_070' || code === 'PSP_AI') return 'PSP_AI';
-	if (code === 'PS_080' || code === 'PSP_080' || code === 'PSP_PI') return 'PSP_PI';
+	const direct = PSD2_SERVICE_LABELS[code];
+	if (direct) return direct;
+
+	const upper = code.toUpperCase();
+	const upperDirect = PSD2_SERVICE_LABELS[upper];
+	if (upperDirect) return upperDirect;
+
+	if (upper === 'PSP_070' || upper === 'PSP_AI') return 'Payment initiation (PISP)';
+	if (upper === 'PSP_080' || upper === 'PSP_PI') return 'Account information (AISP)';
+
 	return '';
 }
 
@@ -20,21 +43,35 @@ function extractRoleCodes(value: unknown): string[] {
 
 	if (typeof value === 'number') {
 		const code = String(value);
-		if (code === '7') return ['PSP_AI'];
-		if (code === '8') return ['PSP_PI'];
+		if (code === '7') return ['PS_070'];
+		if (code === '8') return ['PS_080'];
 		return [];
 	}
 
 	if (typeof value === 'string') {
 		const upper = value.toUpperCase();
 		const roles = new Set<string>();
-		if (upper.includes('PS_070') || upper.includes('PSP_070') || upper.includes('PSP_AI')) roles.add('PSP_AI');
-		if (upper.includes('PS_080') || upper.includes('PSP_080') || upper.includes('PSP_PI')) roles.add('PSP_PI');
-		if (roles.size > 0) {
-			return Array.from(roles);
+
+		// Match known PSD2 service codes: PS_xxx, PSP_xxx — return raw codes
+		const matches = upper.match(/\b(PS_\d{2}[A-Z]?|PSP_[A-Z]{2,})\b/g);
+		if (matches) {
+			for (const m of matches) {
+				roles.add(m);
+			}
 		}
 
-		return [];
+		// Fallback for embedded codes (e.g. inside longer strings)
+		if (roles.size === 0) {
+			for (const code of Object.keys(PSD2_SERVICE_LABELS)) {
+				if (upper.includes(code.toUpperCase())) {
+					roles.add(code);
+				}
+			}
+			if (upper.includes('PSP_070') || upper.includes('PSP_AI')) roles.add('PSP_AI');
+			if (upper.includes('PSP_080') || upper.includes('PSP_PI')) roles.add('PSP_PI');
+		}
+
+		return Array.from(roles);
 	}
 
 	if (Array.isArray(value)) {
@@ -336,6 +373,18 @@ function extractCountry(props: Record<string, string>): string | null {
 	]);
 }
 
+function buildPropsFromRaw(raw: Record<string, unknown>): { props: Record<string, string>; propsRaw: Record<string, unknown> } {
+	const props: Record<string, string> = {};
+	const propsRaw: Record<string, unknown> = {};
+	for (const [key, value] of Object.entries(raw)) {
+		if (typeof value === 'string') {
+			props[key] = value;
+		}
+		propsRaw[key] = value;
+	}
+	return { props, propsRaw };
+}
+
 function normalizeEbaEntity(raw: Record<string, unknown>): NormalizedEntity | null {
 	const companyId = raw['company_id'];
 	if (companyId && typeof companyId === 'string' && companyId.trim()) {
@@ -347,19 +396,24 @@ function normalizeEbaEntity(raw: Record<string, unknown>): NormalizedEntity | nu
 			categorie = activity.trim();
 		}
 
+		// Try to extract roles from the flat shape too (Services, authorisations, etc.)
+		const flatCountry = raw['country'] ? String(raw['country']).trim() : null;
+		const { props: flatProps, propsRaw: flatPropsRaw } = buildPropsFromRaw(raw);
+		const flatRolesByCountry = extractRolesByCountry(raw, flatProps, flatPropsRaw, flatCountry);
+
 		return {
 			siren: companyId.trim(),
 			denomination: raw['denomination'] ? String(raw['denomination']).trim() : '',
 			ville: raw['ville'] ? String(raw['ville']).trim() : null,
-			pays: raw['country'] ? String(raw['country']).trim() : null,
+			pays: flatCountry,
 			categorie,
 			lei: raw['lei'] ? String(raw['lei']).trim() : null,
 			idReferentiel: raw['reference_id'] ? String(raw['reference_id']).trim() : undefined,
 			cib: raw['cib'] ? String(raw['cib']).trim() : null,
 			entityType: raw['entity_type'] ? String(raw['entity_type']).trim() : null,
 			source: 'eba',
-			rolesByCountry: [],
-			rolesSummary: ''
+			rolesByCountry: flatRolesByCountry,
+			rolesSummary: summarizeRoles(flatRolesByCountry)
 		};
 	}
 

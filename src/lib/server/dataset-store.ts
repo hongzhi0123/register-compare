@@ -238,6 +238,10 @@ function getRoleCountryAndNamePairs(entity: NormalizedEntity): Array<{ country: 
 }
 
 function getEntityValuesForKey(entity: NormalizedEntity, key: string): string[] {
+	if (key === 'rolesSummary') {
+		return Array.from(new Set(getRoleCountryAndNamePairs(entity).map((pair) => pair.role)));
+	}
+
 	if (key === 'rolesCountry') {
 		return Array.from(new Set(getRoleCountryAndNamePairs(entity).map((pair) => pair.country)));
 	}
@@ -352,16 +356,33 @@ export async function getDatasetPage(
 
 
 	const selectedCountries = params.selectFilters['rolesCountry'] ?? [];
-	const selectedRoles = params.selectFilters['rolesName'] ?? [];
-	filtered = filtered.filter((entity) => {
-		const countryValues = getEntityValuesForKey(entity, 'rolesCountry');
-		const roleValues = getEntityValuesForKey(entity, 'rolesName');
-		return matchesSelectValues(countryValues, selectedCountries) && matchesSelectValues(roleValues, selectedRoles);
-	});
+	const selectedRoles = params.selectFilters['rolesSummary'] ?? [];
+	if (selectedRoles.length === 0) {
+		// Fallback to rolesName if rolesSummary not used
+		const namesRoles = params.selectFilters['rolesName'] ?? [];
+		if (namesRoles.length > 0) selectedRoles.push(...namesRoles);
+	}
+	if (selectedCountries.length > 0 && selectedRoles.length > 0) {
+		// Combined filter: entity must have the selected role(s) in the selected country(ies)
+		filtered = filtered.filter((entity) => {
+			const pairs = getRoleCountryAndNamePairs(entity);
+			return pairs.some(
+				(pair) =>
+					matchesSelectValues([pair.country], selectedCountries) &&
+					matchesSelectValues([pair.role], selectedRoles)
+			);
+		});
+	} else {
+		filtered = filtered.filter((entity) => {
+			const countryValues = getEntityValuesForKey(entity, 'rolesCountry');
+			const roleValues = getEntityValuesForKey(entity, 'rolesName');
+			return matchesSelectValues(countryValues, selectedCountries) && matchesSelectValues(roleValues, selectedRoles);
+		});
+	}
 
 	progress?.running(84, 'Application des filtres de sélection...');
 	for (const [rawKey, rawValue] of Object.entries(params.selectFilters)) {
-		if (rawKey === 'rolesCountry' || rawKey === 'rolesName') continue;
+		if (rawKey === 'rolesCountry' || rawKey === 'rolesName' || rawKey === 'rolesSummary') continue;
 		if (!allowedKeys.has(rawKey)) continue;
 		const selectedValues = rawValue || [];
 		if (selectedValues.length === 0) continue;
