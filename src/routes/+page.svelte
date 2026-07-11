@@ -890,6 +890,31 @@
 																																	Deselect all
 																																</button>
 															{/if}
+															{#if col.key === 'rolesSummary'}
+																<div class="mt-2 border-t border-gray-200 pt-2">
+																	<div class="mb-1 text-xs font-medium text-gray-500">Limit to country</div>
+																	<div class="max-h-32 overflow-y-auto">
+																		{#each getSelectOptions(s, 'rolesCountry') as opt}
+																			<label class="flex items-center gap-2 py-0.5 text-xs hover:bg-gray-50 px-1 rounded whitespace-nowrap">
+																				<input
+																					type="checkbox"
+																					checked={isSelectChecked(s, 'rolesCountry', opt.value)}
+																					onchange={() => toggleSelectValue(s, 'rolesCountry', opt.value)}
+																					class="rounded"
+																				/>
+																				{opt.label}{#if opt.count != null} <span class="text-gray-400">({opt.count.toLocaleString()})</span>{/if}
+																			</label>
+																		{/each}
+																	</div>
+																	<button
+																		type="button"
+																		class="mt-1 block w-full text-left px-1 py-0.5 text-xs text-gray-400 hover:text-gray-600"
+																		onclick={() => setSelectFilter(s, 'rolesCountry', [])}
+																	>
+																		Deselect all
+																	</button>
+																</div>
+															{/if}
 															<button
 																type="button"
 																class="mt-2 block w-full rounded bg-blue-600 px-2 py-1 text-xs text-white hover:bg-blue-700"
