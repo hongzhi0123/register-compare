@@ -1,39 +1,26 @@
-import { randomUUID } from 'node:crypto';
+﻿import { randomUUID } from 'node:crypto';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { NormalizedEntity } from '$lib/types';
+import type { NormalizedEntity, SourceId } from '$lib/types';
+import { getColumnsForSource, getColumnKeySet } from '$lib/server/sources/registry';
 
-export type DatasetKind = 'eba' | 'regafi';
+export type DatasetKind = SourceId;
 
-const COLUMN_LABELS: Record<string, string> = {
-	siren: 'SIREN',
-	denomination: 'Dénomination',
-	ville: 'Ville',
-	pays: 'Pays',
-	categorie: 'Catégorie',
-	rolesSummary: 'Rôles PSD2',
-	lei: 'LEI',
-	idReferentiel: 'ID référentiel',
-	entityCode: 'Code EBA',
-	cib: 'CIB',
-	entityType: "Type d'entité"
-};
-export type DatasetColumnKey =
-	| 'siren'
-	| 'denomination'
-	| 'ville'
-	| 'pays'
-	| 'categorie'
-	| 'rolesSummary'
-	| 'rolesCountry'
-	| 'rolesName'
-	| 'entityCode'
-	| 'lei'
-	| 'idReferentiel'
-	| 'cib'
-	| 'entityType';
-export type DatasetSortKey = DatasetColumnKey | 'none';
+export type DatasetSortKey = string | 'none';
 export type DatasetSortDirection = 'asc' | 'desc';
+
+export interface FilterOptionEntry {
+	value: string;
+	count: number;
+}
+
+export type FilterOptionsMap = Record<string, FilterOptionEntry[]>;
+
+interface StoredDataset {
+	entities: NormalizedEntity[];
+	filterOptions: FilterOptionsMap;
+	count: number;
+}
 
 export interface DatasetLoadProgress {
 	requestId: string;
@@ -47,6 +34,9 @@ export interface DatasetLoadProgress {
 const STORAGE_DIR = join(process.cwd(), '.data', 'uploads');
 const LOAD_PROGRESS_TTL_MS = 5 * 60 * 1000;
 const datasetLoadProgress = new Map<string, DatasetLoadProgress>();
+
+const datasetCache = new Map<string, { stored: StoredDataset; accessedAt: number }>();
+const MAX_CACHED_DATASETS = 3;
 
 function setDatasetLoadProgress(
 	kind: DatasetKind,
@@ -85,7 +75,7 @@ export function getDatasetLoadProgress(requestId: string): DatasetLoadProgress |
 	return datasetLoadProgress.get(requestId) ?? null;
 }
 
-function createDatasetProgressReporter(kind: DatasetKind, requestId?: string | null) {
+export function createDatasetProgressReporter(kind: DatasetKind, requestId?: string | null) {
 	if (!requestId) return null;
 
 	return {
@@ -114,6 +104,23 @@ function getDatasetTimestamp(datasetId: string): number {
 	return match ? Number(match[1]) : 0;
 }
 
+
+function buildFilterOptionsWithCounts(entities: NormalizedEntity[], keys: string[]): FilterOptionsMap {
+	const result: FilterOptionsMap = {};
+	for (const key of keys) {
+		const countMap = new Map<string, number>();
+		for (const entity of entities) {
+			for (const value of getEntityValuesForKey(entity, key)) {
+				if (value) countMap.set(value, (countMap.get(value) ?? 0) + 1);
+			}
+		}
+		result[key] = Array.from(countMap.entries())
+			.map(([value, count]) => ({ value, count }))
+			.sort((a, b) => a.value.localeCompare(b.value, 'fr', { sensitivity: 'base' }));
+	}
+	return result;
+}
+
 export async function persistDataset(
 	kind: DatasetKind,
 	entities: NormalizedEntity[]
@@ -123,32 +130,85 @@ export async function persistDataset(
 	const datasetId = `${kind}-${Date.now()}-${randomUUID().slice(0, 8)}`;
 	const filePath = getDatasetPath(kind, datasetId);
 
-	await writeFile(filePath, JSON.stringify(entities), 'utf-8');
+	const sorted = [...entities].sort((a, b) => {
+		const left = (a.siren || '').trim();
+		const right = (b.siren || '').trim();
+		return left.localeCompare(right, 'fr', { sensitivity: 'base' });
+	});
 
-	return {
-		datasetId,
-		count: entities.length
-	};
+	const columns = getColumnsForSource(kind);
+	const filterOptionKeys = columns
+		.filter((c) => c.filterType === 'select')
+		.map((c) => c.key);
+
+	const filterOptions = buildFilterOptionsWithCounts(sorted, filterOptionKeys);
+	const stored: StoredDataset = { entities: sorted, filterOptions, count: sorted.length };
+	await writeFile(filePath, JSON.stringify(stored), 'utf-8');
+
+	return { datasetId, count: sorted.length };
+}
+
+
+function ensureFilterOptionsUpgraded(kind: DatasetKind, stored: StoredDataset): void {
+	const columns = getColumnsForSource(kind);
+	const selectKeys = columns.filter((c) => c.filterType === 'select').map((c) => c.key);
+	for (const key of selectKeys) {
+		const options = stored.filterOptions[key];
+		if (!options || options.length === 0) continue;
+		if (typeof (options[0] as unknown) === 'string') {
+			stored.filterOptions[key] = buildFilterOptionsWithCounts(stored.entities, [key])[key] ?? [];
+		}
+	}
 }
 
 async function readDataset(
 	kind: DatasetKind,
 	datasetId: string,
 	onProgress?: ReturnType<typeof createDatasetProgressReporter>
-): Promise<NormalizedEntity[]> {
+): Promise<StoredDataset> {
+	const cached = datasetCache.get(datasetId);
+	if (cached) {
+		cached.accessedAt = Date.now();
+			ensureFilterOptionsUpgraded(kind, cached.stored);
+		onProgress?.running(56, `${cached.stored.entities.length} lignées depuis le cache.`);
+		return cached.stored;
+	}
+
 	const filePath = getDatasetPath(kind, datasetId);
 	onProgress?.running(18, `Lecture du fichier ${datasetId}...`);
 	const content = await readFile(filePath, 'utf-8');
 	onProgress?.running(42, `Analyse du JSON (${Math.round(content.length / 1024 / 1024)} Mo)...`);
 	const parsed = JSON.parse(content);
 
-	if (!Array.isArray(parsed)) {
-		throw new Error('Dataset corrompu');
+	// Backward compat: old format was a plain array
+	let stored: StoredDataset;
+	if (Array.isArray(parsed)) {
+		onProgress?.running(56, `${parsed.length} lignes chargées en mémoire.`);
+		stored = { entities: parsed as NormalizedEntity[], filterOptions: {}, count: parsed.length };
+	} else {
+		stored = parsed as StoredDataset;
+		if (!Array.isArray(stored.entities)) {
+			throw new Error('Dataset corrompu');
+		}
+		onProgress?.running(56, `${stored.entities.length} lignes chargées en mémoire.`);
 	}
 
-	onProgress?.running(56, `${parsed.length} lignes chargées en mémoire.`);
+		ensureFilterOptionsUpgraded(kind, stored);
 
-	return parsed as NormalizedEntity[];
+	if (datasetCache.size >= MAX_CACHED_DATASETS) {
+		let oldestKey = '';
+		let oldestTime = Infinity;
+		for (const [key, entry] of datasetCache) {
+			if (entry.accessedAt < oldestTime) {
+				oldestTime = entry.accessedAt;
+				oldestKey = key;
+			}
+		}
+		if (oldestKey) datasetCache.delete(oldestKey);
+	}
+
+	datasetCache.set(datasetId, { stored, accessedAt: Date.now() });
+	return stored;
 }
 
 function getRoleCountryAndNamePairs(entity: NormalizedEntity): Array<{ country: string; role: string }> {
@@ -177,7 +237,7 @@ function getRoleCountryAndNamePairs(entity: NormalizedEntity): Array<{ country: 
 	return pairs;
 }
 
-function getEntityValuesForKey(entity: NormalizedEntity, key: DatasetColumnKey): string[] {
+function getEntityValuesForKey(entity: NormalizedEntity, key: string): string[] {
 	if (key === 'rolesCountry') {
 		return Array.from(new Set(getRoleCountryAndNamePairs(entity).map((pair) => pair.country)));
 	}
@@ -186,7 +246,13 @@ function getEntityValuesForKey(entity: NormalizedEntity, key: DatasetColumnKey):
 		return Array.from(new Set(getRoleCountryAndNamePairs(entity).map((pair) => pair.role)));
 	}
 
-	const value = String(entity[key] ?? '').trim();
+	if (key.startsWith('extra:')) {
+		const extraKey = key.slice(6);
+		const value = entity.extra?.[extraKey];
+		return value ? [String(value)] : [];
+	}
+
+	const value = String((entity as unknown as Record<string, unknown>)[key] ?? '').trim();
 	return value ? [value] : [];
 }
 
@@ -219,14 +285,37 @@ export async function getLatestDatasetId(kind: DatasetKind): Promise<string | nu
 	}
 }
 
+
+function mergeFilterOptions(filtered: FilterOptionsMap, stored: FilterOptionsMap, keys: string[]): FilterOptionsMap {
+	const result: FilterOptionsMap = {};
+	for (const key of keys) {
+		const filteredEntries = filtered[key] ?? [];
+		const storedEntries = stored[key] ?? [];
+		const storedMap = new Map(storedEntries.map((e) => [e.value, e.count]));
+		const mergedMap = new Map<string, number>();
+		// Start with filtered counts
+		for (const entry of filteredEntries) {
+			mergedMap.set(entry.value, entry.count);
+		}
+		// Add missing values from stored (count 0 — present in full dataset but not in filtered)
+		for (const [value, count] of storedMap) {
+			if (!mergedMap.has(value)) mergedMap.set(value, 0);
+		}
+		result[key] = Array.from(mergedMap.entries())
+			.map(([value, count]) => ({ value, count }))
+			.sort((a, b) => a.value.localeCompare(b.value, 'fr', { sensitivity: 'base' }));
+	}
+	return result;
+}
+
 export async function getDatasetPage(
 	kind: DatasetKind,
 	datasetId: string,
 	params: {
 		page: number;
 		pageSize: number;
-		textFilters: Partial<Record<DatasetColumnKey, string>>;
-		selectFilters: Partial<Record<DatasetColumnKey, string[]>>;
+		textFilters: Record<string, string>;
+		selectFilters: Record<string, string[]>;
 		sortKey: DatasetSortKey;
 		sortDir: DatasetSortDirection;
 		progressRequestId?: string | null;
@@ -237,42 +326,33 @@ export async function getDatasetPage(
 	page: number;
 	pageSize: number;
 	totalPages: number;
-	filterOptions: Partial<Record<DatasetColumnKey, string[]>>;
+	filterOptions: FilterOptionsMap;
 }> {
 	const progress = createDatasetProgressReporter(kind, params.progressRequestId);
 	progress?.running(12, `Chargement du dataset ${datasetId}...`);
-	const entities = await readDataset(kind, datasetId, progress);
+	const stored = await readDataset(kind, datasetId, progress);
 
-	let filtered = entities;
+	let filtered = stored.entities;
 	progress?.running(64, 'Application des filtres texte...');
 
+	const allowedKeys = getColumnKeySet(kind);
+	let hasActiveFilters = false;
+
 	for (const [rawKey, rawValue] of Object.entries(params.textFilters)) {
-		const key = rawKey as DatasetColumnKey;
+		if (!allowedKeys.has(rawKey)) continue;
 		const query = (rawValue || '').trim().toLowerCase();
 		if (!query) continue;
+		hasActiveFilters = true;
 
 		filtered = filtered.filter((entity) => {
-			const values = getEntityValuesForKey(entity, key).map((value) => value.toLowerCase());
+			const values = getEntityValuesForKey(entity, rawKey).map((value) => value.toLowerCase());
 			return values.some((value) => value.includes(query));
 		});
 	}
 
-	progress?.running(76, 'Préparation des options de filtre...');
-	const filterOptions: Partial<Record<DatasetColumnKey, string[]>> = {};
-	for (const [rawKey] of Object.entries(params.selectFilters)) {
-		const key = rawKey as DatasetColumnKey;
 
-		const values = new Set<string>();
-		for (const entity of filtered) {
-			for (const value of getEntityValuesForKey(entity, key)) {
-				if (value) values.add(value);
-			}
-		}
-		filterOptions[key] = Array.from(values).sort((a, b) => a.localeCompare(b, 'fr', { sensitivity: 'base' }));
-	}
-
-	const selectedCountries = params.selectFilters.rolesCountry ?? [];
-	const selectedRoles = params.selectFilters.rolesName ?? [];
+	const selectedCountries = params.selectFilters['rolesCountry'] ?? [];
+	const selectedRoles = params.selectFilters['rolesName'] ?? [];
 	filtered = filtered.filter((entity) => {
 		const countryValues = getEntityValuesForKey(entity, 'rolesCountry');
 		const roleValues = getEntityValuesForKey(entity, 'rolesName');
@@ -281,20 +361,36 @@ export async function getDatasetPage(
 
 	progress?.running(84, 'Application des filtres de sélection...');
 	for (const [rawKey, rawValue] of Object.entries(params.selectFilters)) {
-		const key = rawKey as DatasetColumnKey;
-		if (key === 'rolesCountry' || key === 'rolesName') continue;
+		if (rawKey === 'rolesCountry' || rawKey === 'rolesName') continue;
+		if (!allowedKeys.has(rawKey)) continue;
 		const selectedValues = rawValue || [];
 		if (selectedValues.length === 0) continue;
+		hasActiveFilters = true;
 
 		filtered = filtered.filter((entity) => {
-			const values = getEntityValuesForKey(entity, key);
+			const values = getEntityValuesForKey(entity, rawKey);
 			return matchesSelectValues(values, selectedValues);
 		});
 	}
+	progress?.running(76, 'Préparation des options de filtre...');
+	let filterOptions: FilterOptionsMap;
+	const selectOnlyKeys = new Set(getColumnsForSource(kind).filter((c) => c.filterType === 'select').map((c) => c.key));
+	const filterKeys = Array.from(new Set(Object.keys(params.selectFilters))).filter((k) => allowedKeys.has(k) && selectOnlyKeys.has(k));
+	if (hasActiveFilters && Object.keys(stored.filterOptions).length > 0) {
+		// Merge: filtered counts + all stored values so nothing disappears
+		const filteredOptions = buildFilterOptionsWithCounts(filtered, filterKeys);
+		filterOptions = mergeFilterOptions(filteredOptions, stored.filterOptions, filterKeys);
+	} else if (Object.keys(stored.filterOptions).length > 0) {
+		filterOptions = stored.filterOptions;
+	} else {
+		filterOptions = buildFilterOptionsWithCounts(stored.entities, filterKeys);
+		Object.assign(stored.filterOptions, filterOptions);
+	}
 
 	progress?.running(92, 'Tri des résultats...');
+	const isDefaultSort = params.sortKey === 'siren' && params.sortDir === 'asc';
 	const sorted =
-		params.sortKey === 'none'
+		params.sortKey === 'none' || (isDefaultSort && !hasActiveFilters && Object.keys(stored.filterOptions).length > 0)
 			? filtered
 			: [...filtered].sort((a, b) => {
 				const sortKey = params.sortKey === 'none' ? 'siren' : params.sortKey;
@@ -326,8 +422,8 @@ export async function getLatestDatasetPage(
 	params: {
 		page: number;
 		pageSize: number;
-		textFilters: Partial<Record<DatasetColumnKey, string>>;
-		selectFilters: Partial<Record<DatasetColumnKey, string[]>>;
+		textFilters: Record<string, string>;
+		selectFilters: Record<string, string[]>;
 		sortKey: DatasetSortKey;
 		sortDir: DatasetSortDirection;
 		progressRequestId?: string | null;
@@ -339,7 +435,7 @@ export async function getLatestDatasetPage(
 	page: number;
 	pageSize: number;
 	totalPages: number;
-	filterOptions: Partial<Record<DatasetColumnKey, string[]>>;
+	filterOptions: FilterOptionsMap;
 }> {
 	const progress = createDatasetProgressReporter(kind, params.progressRequestId);
 	progress?.running(5, 'Recherche du dernier dataset disponible...');
@@ -366,35 +462,40 @@ export async function getLatestDatasetPage(
 export async function getFilteredEntities(
 	kind: DatasetKind,
 	datasetId: string,
-	textFilters: Partial<Record<DatasetColumnKey, string>>,
-	selectFilters: Partial<Record<DatasetColumnKey, string[]>>,
+	textFilters: Record<string, string>,
+	selectFilters: Record<string, string[]>,
 	sortKey: DatasetSortKey,
 	sortDir: DatasetSortDirection
 ): Promise<NormalizedEntity[]> {
-	const entities = await readDataset(kind, datasetId);
+	const stored = await readDataset(kind, datasetId);
+	const allowedKeys = getColumnKeySet(kind);
 
-	let filtered = entities;
+	let filtered = stored.entities;
+	let hasFilters = false;
 	for (const [rawKey, rawValue] of Object.entries(textFilters)) {
-		const key = rawKey as DatasetColumnKey;
+		if (!allowedKeys.has(rawKey)) continue;
 		const query = (rawValue || '').trim().toLowerCase();
 		if (!query) continue;
+		hasFilters = true;
 		filtered = filtered.filter((entity) => {
-			const values = getEntityValuesForKey(entity, key).map((value) => value.toLowerCase());
+			const values = getEntityValuesForKey(entity, rawKey).map((value) => value.toLowerCase());
 			return values.some((value) => value.includes(query));
 		});
 	}
 
 	for (const [rawKey, rawValue] of Object.entries(selectFilters)) {
-		const key = rawKey as DatasetColumnKey;
+		if (!allowedKeys.has(rawKey)) continue;
 		const selectedValues = rawValue || [];
 		if (selectedValues.length === 0) continue;
+		hasFilters = true;
 		filtered = filtered.filter((entity) => {
-			const values = getEntityValuesForKey(entity, key);
+			const values = getEntityValuesForKey(entity, rawKey);
 			return matchesSelectValues(values, selectedValues);
 		});
 	}
 
-	if (sortKey !== 'none') {
+	const isDefaultSort = sortKey === 'siren' && sortDir === 'asc';
+	if (sortKey !== 'none' && !(isDefaultSort && !hasFilters && Object.keys(stored.filterOptions).length > 0)) {
 		filtered = [...filtered].sort((a, b) => {
 			const left = getEntityValuesForKey(a, sortKey).join(' | ');
 			const right = getEntityValuesForKey(b, sortKey).join(' | ');
@@ -410,8 +511,14 @@ function escapeCsv(value: string): string {
 	return `"${value.replace(/"/g, '""')}"`;
 }
 
-export function entitiesToCsv(entities: NormalizedEntity[], columnKeys: string[]): string {
-	const labels = columnKeys.map((key) => COLUMN_LABELS[key] || key);
+export function entitiesToCsv(entities: NormalizedEntity[], columnKeys: string[], kind?: DatasetKind): string {
+	const columns = kind ? getColumnsForSource(kind) : [];
+	const labelMap: Record<string, string> = {};
+	for (const col of columns) {
+		labelMap[col.key] = col.label;
+	}
+
+	const labels = columnKeys.map((key) => labelMap[key] || key);
 	const header = labels.map((label) => escapeCsv(label)).join(',');
 
 	const rows = entities.map((entity) =>
@@ -421,6 +528,11 @@ export function entitiesToCsv(entities: NormalizedEntity[], columnKeys: string[]
 					return entity.rolesSummary || '';
 				}
 				if (key === 'rolesCountry' || key === 'rolesName') return '';
+				if (key.startsWith('extra:')) {
+					const extraKey = key.slice(6);
+					const value = entity.extra?.[extraKey];
+					return value === null || value === undefined ? '' : String(value);
+				}
 				const raw = (entity as unknown as Record<string, unknown>)[key];
 				return raw === null || raw === undefined ? '' : String(raw);
 			})

@@ -1,4 +1,4 @@
-import type { NormalizedEntity } from '$lib/types';
+﻿import type { NormalizedEntity } from '$lib/types';
 import { extractJsonObjects } from './stream-json';
 
 function normalizeCountryCode(country: string | null): string {
@@ -336,12 +336,6 @@ function extractCountry(props: Record<string, string>): string | null {
 	]);
 }
 
-function isFrenchCountry(country: string | null): boolean {
-	if (!country) return false;
-	const normalized = country.trim().toUpperCase();
-	return normalized === 'FRANCE' || normalized === 'FR' || normalized === 'FRA';
-}
-
 function normalizeEbaEntity(raw: Record<string, unknown>): NormalizedEntity | null {
 	const companyId = raw['company_id'];
 	if (companyId && typeof companyId === 'string' && companyId.trim()) {
@@ -369,12 +363,9 @@ function normalizeEbaEntity(raw: Record<string, unknown>): NormalizedEntity | nu
 		};
 	}
 
-	if (raw.CA_OwnerID !== 'FR_ACPR') return null;
-
 	const props = extractProperties(raw);
 	const propsRaw = extractPropertiesRaw(raw);
 	const country = extractCountry(props);
-	if (country && !isFrenchCountry(country)) return null;
 
 	const siren = props['ENT_NAT_REF_COD'] || '';
 	if (!siren) return null;
@@ -395,7 +386,7 @@ function normalizeEbaEntity(raw: Record<string, unknown>): NormalizedEntity | nu
 }
 
 export function parseEbaPayload(payload: unknown): NormalizedEntity[] {
-	const french: NormalizedEntity[] = [];
+	const entities: NormalizedEntity[] = [];
 	const stack: unknown[] = [payload];
 
 	while (stack.length > 0) {
@@ -412,7 +403,7 @@ export function parseEbaPayload(payload: unknown): NormalizedEntity[] {
 
 		const obj = current as Record<string, unknown>;
 		const entity = normalizeEbaEntity(obj);
-		if (entity) french.push(entity);
+		if (entity) entities.push(entity);
 
 		for (const value of Object.values(obj)) {
 			if (value && typeof value === 'object') {
@@ -421,38 +412,19 @@ export function parseEbaPayload(payload: unknown): NormalizedEntity[] {
 		}
 	}
 
-	return french;
+	return entities;
 }
 
 export async function parseEbaStream(webStream: ReadableStream): Promise<NormalizedEntity[]> {
-	const french: NormalizedEntity[] = [];
+	const entities: NormalizedEntity[] = [];
 	for await (const raw of extractJsonObjects(webStream)) {
 		const entity = normalizeEbaEntity(raw);
-		if (entity) french.push(entity);
+		if (entity) entities.push(entity);
  	}
 
-	return french;
+	return entities;
 }
 
 function mapEbaTypeToCategory(entityType: string): string {
-	switch (entityType) {
-		case 'PSD_PI':
-			return 'Établissement de Paiement';
-		case 'PSD_EMI':
-			return 'Établissement de Monnaie Électronique';
-		case 'PSD_AISP':
-			return 'Prestataire de services d\'informations sur les comptes (PSIC)';
-		case 'PSD_AGENT':
-			return 'Agent PSP';
-		case 'PSD_EXEMPTED_PI':
-			return 'Autres prestataires de services de paiement';
-		case 'PSD_EXEMPTED_EMI':
-			return 'Établissement de Monnaie Électronique (exempté)';
-		case 'PSD_EXCLUDED_PSP':
-			return 'Prestataire exclu';
-		case 'PSD_BRANCH':
-			return 'Succursale';
-		default:
-			return entityType;
-	}
+	return entityType;
 }

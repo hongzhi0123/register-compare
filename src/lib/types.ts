@@ -1,10 +1,12 @@
+export type SourceId = 'regafi' | 'eba' | 'bafin' | 'fma';
+
 export type ComparisonStatus =
 	| 'match'
 	| 'nameMismatch'
 	| 'cityMismatch'
 	| 'categoryMismatch'
-	| 'onlyInRegafi'
-	| 'onlyInEba';
+	| 'onlyInLeft'
+	| 'onlyInRight';
 
 export interface EbaProperty {
 	PropertyCode: string;
@@ -80,25 +82,29 @@ export interface NormalizedEntity {
 	entityCode?: string;
 	cib?: string | null;
 	entityType?: string | null;
-	source: 'regafi' | 'eba';
+	source: SourceId;
 	authorisations?: string | null;
 	rolesByCountry?: CountryRoles[];
 	rolesSummary?: string;
+	extra?: Record<string, string | null>;
 }
 
 export interface ComparisonMatch {
 	siren: string;
-	regafi: NormalizedEntity | null;
-	eba: NormalizedEntity | null;
+	left: NormalizedEntity | null;
+	right: NormalizedEntity | null;
 	status: ComparisonStatus;
 	differences: string[];
 	rolesSummary?: string;
 	rolesDetails?: CountryRoleDetail[];
 }
 
+export type ComparisonKey = 'siren' | 'lei' | 'denomination';
+
 export interface ComparisonOptions {
 	columns: Array<'siren' | 'denomination'>;
 	nameSimilarityThreshold: number;
+	comparisonKey?: ComparisonKey;
 }
 
 export interface ComparisonResult {
@@ -108,9 +114,9 @@ export interface ComparisonResult {
 		totalNameMismatches: number;
 		totalCityMismatches: number;
 		totalCategoryMismatches: number;
-		totalOnlyInRegafi: number;
-		totalOnlyInEba: number;
-		totalRegafi: number;
-		totalEba: number;
+		totalOnlyInLeft: number;
+		totalOnlyInRight: number;
+		totalLeft: number;
+		totalRight: number;
 	};
 }

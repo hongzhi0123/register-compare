@@ -12,7 +12,7 @@ function normalize(str: string | null): string {
 	return str
 		.toLowerCase()
 		.normalize('NFD')
-		.replace(/[\u0300-\u036f]/g, '')
+		.replace(/[̀-ͯ]/g, '')
 		.replace(/[^a-z0-9]/g, ' ')
 		.replace(/\s+/g, ' ')
 		.trim();
@@ -93,7 +93,7 @@ function toCountryRoleDetails(entry: CountryRoles): CountryRoleDetail[] {
 	return rows;
 }
 
-function mergeRolesByCountry(regafi: NormalizedEntity | null, eba: NormalizedEntity | null): CountryRoleDetail[] {
+function mergeRolesByCountry(left: NormalizedEntity | null, right: NormalizedEntity | null): CountryRoleDetail[] {
 	const byCountry = new Map<string, { countryName: string; roles: Set<string> }>();
 
 	const addSource = (source: NormalizedEntity | null) => {
@@ -118,8 +118,8 @@ function mergeRolesByCountry(regafi: NormalizedEntity | null, eba: NormalizedEnt
 		}
 	};
 
-	addSource(regafi);
-	addSource(eba);
+	addSource(left);
+	addSource(right);
 
 	return Array.from(byCountry.entries())
 		.map(([countryCode, value]) => ({
@@ -144,16 +144,16 @@ function summarizeRoles(rolesByCountry: CountryRoleDetail[]): string {
 
 function buildMatch(
 	siren: string,
-	regafi: NormalizedEntity | null,
-	eba: NormalizedEntity | null,
+	left: NormalizedEntity | null,
+	right: NormalizedEntity | null,
 	status: ComparisonMatch['status'],
 	differences: string[]
 ): ComparisonMatch {
-	const rolesDetails = mergeRolesByCountry(regafi, eba);
+	const rolesDetails = mergeRolesByCountry(left, right);
 	return {
 		siren,
-		regafi,
-		eba,
+		left,
+		right,
 		status,
 		differences,
 		rolesDetails,
@@ -161,22 +161,22 @@ function buildMatch(
 	};
 }
 
-function buildSummary(matches: ComparisonMatch[], regafiCount: number, ebaCount: number): ComparisonResult['summary'] {
+function buildSummary(matches: ComparisonMatch[], leftCount: number, rightCount: number): ComparisonResult['summary'] {
 	return {
 		totalMatches: matches.filter((m) => m.status === 'match').length,
 		totalNameMismatches: matches.filter((m) => m.status === 'nameMismatch').length,
 		totalCityMismatches: matches.filter((m) => m.status === 'cityMismatch').length,
 		totalCategoryMismatches: matches.filter((m) => m.status === 'categoryMismatch').length,
-		totalOnlyInRegafi: matches.filter((m) => m.status === 'onlyInRegafi').length,
-		totalOnlyInEba: matches.filter((m) => m.status === 'onlyInEba').length,
-		totalRegafi: regafiCount,
-		totalEba: ebaCount
+		totalOnlyInLeft: matches.filter((m) => m.status === 'onlyInLeft').length,
+		totalOnlyInRight: matches.filter((m) => m.status === 'onlyInRight').length,
+		totalLeft: leftCount,
+		totalRight: rightCount
 	};
 }
 
 export function compare(
-	regafiEntities: NormalizedEntity[],
-	ebaEntities: NormalizedEntity[],
+	leftEntities: NormalizedEntity[],
+	rightEntities: NormalizedEntity[],
 	options?: Partial<ComparisonOptions>
 ): ComparisonResult {
 	const columns = new Set(options?.columns ?? ['siren', 'denomination']);
@@ -189,67 +189,65 @@ export function compare(
 	}
 
 	if (useSiren) {
-	const regafiBySiren = new Map<string, NormalizedEntity>();
-	for (const e of regafiEntities) {
-		if (e.siren) regafiBySiren.set(e.siren, e);
-	}
-
-	const ebaBySiren = new Map<string, NormalizedEntity>();
-	for (const e of ebaEntities) {
-		if (e.siren) ebaBySiren.set(e.siren, e);
-	}
-
-	const allSirens = new Set([...regafiBySiren.keys(), ...ebaBySiren.keys()]);
-	const matches: ComparisonMatch[] = [];
-
-	for (const siren of allSirens) {
-		const regafi = regafiBySiren.get(siren) || null;
-		const eba = ebaBySiren.get(siren) || null;
-
-		let status: ComparisonMatch['status'];
-		const differences: string[] = [];
-
-		if (regafi && !eba) {
-			status = 'onlyInRegafi';
-		} else if (!regafi && eba) {
-			status = 'onlyInEba';
-		} else if (regafi && eba) {
-			if (useName) {
-				const score = similarity(regafi.denomination, eba.denomination);
-				if (score < nameSimilarityThreshold) {
-					differences.push(
-						`Dénomination: "${regafi.denomination}" (REGAFI) ≠ "${eba.denomination}" (EBA), similarité ${(score * 100).toFixed(1)}% (< ${(nameSimilarityThreshold * 100).toFixed(0)}%)`
-					);
-				}
-			}
-
-			if (differences.length === 0) {
-				status = 'match';
-			} else if (differences.some((d) => d.startsWith('Dénomination'))) {
-				status = 'nameMismatch';
-			} else {
-				status = 'nameMismatch';
-			}
-		} else {
-			continue;
+		const leftBySiren = new Map<string, NormalizedEntity>();
+		for (const e of leftEntities) {
+			if (e.siren) leftBySiren.set(e.siren, e);
 		}
 
-		matches.push(buildMatch(siren, regafi, eba, status, differences));
-	}
+		const rightBySiren = new Map<string, NormalizedEntity>();
+		for (const e of rightEntities) {
+			if (e.siren) rightBySiren.set(e.siren, e);
+		}
 
-	return { matches, summary: buildSummary(matches, regafiEntities.length, ebaEntities.length) };
+		const allSirens = new Set([...leftBySiren.keys(), ...rightBySiren.keys()]);
+		const matches: ComparisonMatch[] = [];
+
+		for (const siren of allSirens) {
+			const left = leftBySiren.get(siren) || null;
+			const right = rightBySiren.get(siren) || null;
+
+			let status: ComparisonMatch['status'];
+			const differences: string[] = [];
+
+			if (left && !right) {
+				status = 'onlyInLeft';
+			} else if (!left && right) {
+				status = 'onlyInRight';
+			} else if (left && right) {
+				if (useName) {
+					const score = similarity(left.denomination, right.denomination);
+					if (score < nameSimilarityThreshold) {
+						differences.push(
+							`Dénomination: "${left.denomination}" (gauche) ≠ "${right.denomination}" (droite), similarité ${(score * 100).toFixed(1)}% (< ${(nameSimilarityThreshold * 100).toFixed(0)}%)`
+						);
+					}
+				}
+
+				if (differences.length === 0) {
+					status = 'match';
+				} else {
+					status = 'nameMismatch';
+				}
+			} else {
+				continue;
+			}
+
+			matches.push(buildMatch(siren, left, right, status, differences));
+		}
+
+		return { matches, summary: buildSummary(matches, leftEntities.length, rightEntities.length) };
 	}
 
 	const matches: ComparisonMatch[] = [];
-	const usedEbaIndexes = new Set<number>();
+	const usedRightIndexes = new Set<number>();
 
-	for (const regafiEntity of regafiEntities) {
+	for (const leftEntity of leftEntities) {
 		let bestIndex = -1;
 		let bestScore = -1;
 
-		for (let index = 0; index < ebaEntities.length; index += 1) {
-			if (usedEbaIndexes.has(index)) continue;
-			const score = similarity(regafiEntity.denomination, ebaEntities[index].denomination);
+		for (let index = 0; index < rightEntities.length; index += 1) {
+			if (usedRightIndexes.has(index)) continue;
+			const score = similarity(leftEntity.denomination, rightEntities[index].denomination);
 			if (score > bestScore) {
 				bestScore = score;
 				bestIndex = index;
@@ -257,30 +255,30 @@ export function compare(
 		}
 
 		if (bestIndex >= 0 && bestScore >= nameSimilarityThreshold) {
-			usedEbaIndexes.add(bestIndex);
-			const ebaEntity = ebaEntities[bestIndex];
+			usedRightIndexes.add(bestIndex);
+			const rightEntity = rightEntities[bestIndex];
 			matches.push(
-				buildMatch(regafiEntity.siren || ebaEntity.siren, regafiEntity, ebaEntity, 'match', [])
+				buildMatch(leftEntity.siren || rightEntity.siren, leftEntity, rightEntity, 'match', [])
 			);
 			continue;
 		}
 
 		matches.push(
-			buildMatch(regafiEntity.siren, regafiEntity, null, 'onlyInRegafi', [
-				`Aucune dénomination EBA avec une similarité >= ${(nameSimilarityThreshold * 100).toFixed(0)}%`
+			buildMatch(leftEntity.siren, leftEntity, null, 'onlyInLeft', [
+				`Aucune dénomination droite avec une similarité >= ${(nameSimilarityThreshold * 100).toFixed(0)}%`
 			])
 		);
 	}
 
-	for (let index = 0; index < ebaEntities.length; index += 1) {
-		if (usedEbaIndexes.has(index)) continue;
-		const ebaEntity = ebaEntities[index];
+	for (let index = 0; index < rightEntities.length; index += 1) {
+		if (usedRightIndexes.has(index)) continue;
+		const rightEntity = rightEntities[index];
 		matches.push(
-			buildMatch(ebaEntity.siren, null, ebaEntity, 'onlyInEba', [
-				`Aucune dénomination REGAFI avec une similarité >= ${(nameSimilarityThreshold * 100).toFixed(0)}%`
+			buildMatch(rightEntity.siren, null, rightEntity, 'onlyInRight', [
+				`Aucune dénomination gauche avec une similarité >= ${(nameSimilarityThreshold * 100).toFixed(0)}%`
 			])
 		);
 	}
 
-	return { matches, summary: buildSummary(matches, regafiEntities.length, ebaEntities.length) };
+	return { matches, summary: buildSummary(matches, leftEntities.length, rightEntities.length) };
 }

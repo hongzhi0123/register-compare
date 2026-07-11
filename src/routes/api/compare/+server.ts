@@ -1,48 +1,50 @@
 import { json } from '@sveltejs/kit';
 import { compare } from '$lib/server/compare';
-import { getFilteredEntities, type DatasetColumnKey } from '$lib/server/dataset-store';
-import type { ComparisonOptions, NormalizedEntity } from '$lib/types';
+import { getFilteredEntities } from '$lib/server/dataset-store';
+import type { ComparisonOptions, NormalizedEntity, SourceId } from '$lib/types';
 
 export async function POST({ request }) {
 	try {
 		const body = await request.json();
 		const {
-			ebaDatasetId,
-			regafiDatasetId,
-			ebaTextFilters = {},
-			ebaSelectFilters = {},
-			regafiTextFilters = {},
-			regafiSelectFilters = {},
+			leftDatasetId,
+			rightDatasetId,
+			leftSource = 'regafi',
+			rightSource = 'eba',
+			leftTextFilters = {},
+			leftSelectFilters = {},
+			rightTextFilters = {},
+			rightSelectFilters = {},
 			options = {} as Partial<ComparisonOptions>,
-			eba: ebaInput,
-			regafi: regafiInput
+			left: leftInput,
+			right: rightInput
 		} = body;
 
-		let ebaEntities: NormalizedEntity[];
-		let regafiEntities: NormalizedEntity[];
+		let leftEntities: NormalizedEntity[];
+		let rightEntities: NormalizedEntity[];
 
-		if (ebaDatasetId && regafiDatasetId) {
-			[ebaEntities, regafiEntities] = await Promise.all([
+		if (leftDatasetId && rightDatasetId) {
+			[leftEntities, rightEntities] = await Promise.all([
 				getFilteredEntities(
-					'eba',
-					ebaDatasetId,
-					ebaTextFilters as Partial<Record<DatasetColumnKey, string>>,
-					ebaSelectFilters as Partial<Record<DatasetColumnKey, string[]>>,
+					leftSource as SourceId,
+					leftDatasetId,
+					leftTextFilters as Record<string, string>,
+					leftSelectFilters as Record<string, string[]>,
 					'none',
 					'asc'
 				),
 				getFilteredEntities(
-					'regafi',
-					regafiDatasetId,
-					regafiTextFilters as Partial<Record<DatasetColumnKey, string>>,
-					regafiSelectFilters as Partial<Record<DatasetColumnKey, string[]>>,
+					rightSource as SourceId,
+					rightDatasetId,
+					rightTextFilters as Record<string, string>,
+					rightSelectFilters as Record<string, string[]>,
 					'none',
 					'asc'
 				)
 			]);
-		} else if (Array.isArray(ebaInput) && Array.isArray(regafiInput)) {
-			ebaEntities = ebaInput;
-			regafiEntities = regafiInput;
+		} else if (Array.isArray(leftInput) && Array.isArray(rightInput)) {
+			leftEntities = leftInput;
+			rightEntities = rightInput;
 		} else {
 			return json(
 				{ success: false, error: 'Fournissez les identifiants des datasets ou les données directement' },
@@ -50,7 +52,7 @@ export async function POST({ request }) {
 			);
 		}
 
-		const result = compare(regafiEntities, ebaEntities, options);
+		const result = compare(leftEntities, rightEntities, options);
 		return json({ success: true, ...result });
 	} catch (error) {
 		const message = error instanceof Error ? error.message : 'Erreur inconnue';

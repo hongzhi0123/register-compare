@@ -1,100 +1,57 @@
 import { json } from '@sveltejs/kit';
-import { getDatasetPage, getLatestDatasetPage, persistDataset, getFilteredEntities, entitiesToCsv } from '$lib/server/dataset-store';
+import { getSource, getColumnsForSource } from '$lib/server/sources/registry';
 import {
-	fetchRegafiEntities,
-	parseRegafiJson,
-	normalizeRegafiEntity,
-	normalizeFlatEntity
-} from '$lib/server/regafi';
+	getDatasetPage,
+	getLatestDatasetPage,
+	persistDataset,
+	getFilteredEntities,
+	entitiesToCsv
+} from '$lib/server/dataset-store';
 
-const ALLOWED_FILTER_KEYS = [
-	'siren',
-	'denomination',
-	'ville',
-	'pays',
-	'categorie',
-	'rolesSummary',
-	'rolesCountry',
-	'rolesName',
-	'entityCode',
-	'lei',
-	'idReferentiel'
-] as const;
+const SOURCE_ID = 'regafi';
+const columns = getColumnsForSource(SOURCE_ID);
+const ALLOWED_FILTER_KEYS = columns.map((c) => c.key);
 
-type AllowedFilterKey = (typeof ALLOWED_FILTER_KEYS)[number];
-
-function parseTextFilterMap(raw: string | null): Partial<Record<AllowedFilterKey, string>> {
+function parseTextFilterMap(raw: string | null): Record<string, string> {
 	if (!raw) return {};
-
 	try {
 		const parsed = JSON.parse(raw);
 		if (!parsed || typeof parsed !== 'object') return {};
-
-		const result: Partial<Record<AllowedFilterKey, string>> = {};
+		const result: Record<string, string> = {};
 		for (const key of ALLOWED_FILTER_KEYS) {
 			const value = parsed[key];
-			if (typeof value === 'string') {
-				result[key] = value;
-			}
+			if (typeof value === 'string') result[key] = value;
 		}
 		return result;
-	} catch {
-		return {};
-	}
+	} catch { return {}; }
 }
 
-function parseSelectFilterMap(raw: string | null): Partial<Record<AllowedFilterKey, string[]>> {
+function parseSelectFilterMap(raw: string | null): Record<string, string[]> {
 	if (!raw) return {};
-
 	try {
 		const parsed = JSON.parse(raw);
 		if (!parsed || typeof parsed !== 'object') return {};
-
-		const result: Partial<Record<AllowedFilterKey, string[]>> = {};
+		const result: Record<string, string[]> = {};
 		for (const key of ALLOWED_FILTER_KEYS) {
 			const value = parsed[key];
-			if (typeof value === 'string') {
-				result[key] = value ? [value] : [];
-			}
-			if (Array.isArray(value)) {
-				result[key] = value.filter((item): item is string => typeof item === 'string');
-			}
+			if (typeof value === 'string') result[key] = value ? [value] : [];
+			if (Array.isArray(value)) result[key] = value.filter((item): item is string => typeof item === 'string');
 		}
 		return result;
-	} catch {
-		return {};
-	}
+	} catch { return {}; }
 }
 
 export async function POST({ request }) {
+	const source = getSource(SOURCE_ID);
+	if (!source) return json({ success: false, error: 'Source non trouvée' }, { status: 500 });
+
 	try {
 		const text = await request.text();
 		const body = text ? JSON.parse(text) : null;
 
-		if (Array.isArray(body)) {
-			const entities = body.map(normalizeFlatEntity);
-			const stored = await persistDataset('regafi', entities);
-			return json({ success: true, datasetId: stored.datasetId, count: stored.count });
-		}
-		if (body.results) {
-			const entities = body.results.map(normalizeRegafiEntity);
-			const stored = await persistDataset('regafi', entities);
-			return json({ success: true, datasetId: stored.datasetId, count: stored.count });
-		}
-		if (body.json) {
-			const entities = parseRegafiJson(body.json);
-			const stored = await persistDataset('regafi', entities);
-			return json({ success: true, datasetId: stored.datasetId, count: stored.count });
-		}
-		if (body.apiKey) {
-			const entities = await fetchRegafiEntities(body.apiKey);
-			const stored = await persistDataset('regafi', entities);
-			return json({ success: true, datasetId: stored.datasetId, count: stored.count });
-		}
-
-		if (typeof body === 'string') {
-			const entities = parseRegafiJson(body);
-			const stored = await persistDataset('regafi', entities);
+		if (Array.isArray(body) || body?.results || body?.json || body?.apiKey || typeof body === 'string') {
+			const entities = await source.parse({ type: 'json', text });
+			const stored = await persistDataset(SOURCE_ID, entities);
 			return json({ success: true, datasetId: stored.datasetId, count: stored.count });
 		}
 
@@ -115,34 +72,27 @@ export async function GET({ url }) {
 		const textFilters = parseTextFilterMap(url.searchParams.get('textFilters'));
 		const selectFilters = parseSelectFilterMap(url.searchParams.get('selectFilters'));
 		const sortParam = url.searchParams.get('sortKey');
-		const sortDir = url.searchParams.get('sortDir') === 'desc' ? 'desc' : 'asc';
-		const sortKey = sortParam && ALLOWED_FILTER_KEYS.includes(sortParam as AllowedFilterKey)
-			? (sortParam as AllowedFilterKey)
-			: sortParam === 'none'
-				? 'none'
-				: 'siren';
+		const sortDir = url.searchParams.get('sortDir') === 'desc' ? 'desc' as const : 'asc' as const;
+		const sortKey = sortParam && (ALLOWED_FILTER_KEYS.includes(sortParam) || sortParam === 'none')
+			? sortParam : 'siren';
 
 		if (latest) {
-			const result = await getLatestDatasetPage('regafi', {
+			const result = await getLatestDatasetPage(SOURCE_ID, {
 				page: Number.isFinite(page) && page > 0 ? page : 1,
 				pageSize: Number.isFinite(pageSize) && pageSize > 0 ? Math.min(pageSize, 100000) : 10,
-				textFilters,
-				selectFilters,
-				sortKey,
-				sortDir
+				textFilters, selectFilters, sortKey, sortDir
 			});
-
 			return json({ success: true, ...result });
 		}
 
 		if (url.searchParams.get('export') === 'csv') {
-			if (!datasetId) {
-				return new Response('datasetId requis', { status: 400 });
-			}
+			if (!datasetId) return new Response('datasetId requis', { status: 400 });
 			const columnsParam = url.searchParams.get('columns') || '';
-			const columnKeys = columnsParam ? columnsParam.split(',').filter((k) => ALLOWED_FILTER_KEYS.includes(k as AllowedFilterKey)) : [...ALLOWED_FILTER_KEYS];
-			const entities = await getFilteredEntities('regafi', datasetId, textFilters, selectFilters, sortKey, sortDir);
-			const csv = entitiesToCsv(entities, columnKeys);
+			const columnKeys = columnsParam
+				? columnsParam.split(',').filter((k) => ALLOWED_FILTER_KEYS.includes(k))
+				: [...ALLOWED_FILTER_KEYS];
+			const entities = await getFilteredEntities(SOURCE_ID, datasetId, textFilters, selectFilters, sortKey, sortDir);
+			const csv = entitiesToCsv(entities, columnKeys, SOURCE_ID);
 			return new Response(csv, {
 				status: 200,
 				headers: {
@@ -152,19 +102,13 @@ export async function GET({ url }) {
 			});
 		}
 
-		if (!datasetId) {
-			return json({ success: false, error: 'datasetId requis' }, { status: 400 });
-		}
+		if (!datasetId) return json({ success: false, error: 'datasetId requis' }, { status: 400 });
 
-		const result = await getDatasetPage('regafi', datasetId, {
+		const result = await getDatasetPage(SOURCE_ID, datasetId, {
 			page: Number.isFinite(page) && page > 0 ? page : 1,
 			pageSize: Number.isFinite(pageSize) && pageSize > 0 ? Math.min(pageSize, 100000) : 10,
-			textFilters,
-			selectFilters,
-			sortKey,
-			sortDir
+			textFilters, selectFilters, sortKey, sortDir
 		});
-
 		return json({ success: true, datasetId, ...result });
 	} catch (error) {
 		const message = error instanceof Error ? error.message : 'Erreur inconnue';

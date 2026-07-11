@@ -1,4 +1,4 @@
-<script lang="ts">
+﻿<script lang="ts">
 	import './layout.css';
 
 	let { children } = $props();
@@ -27,9 +27,9 @@
 
 	<!-- <footer class="bg-white border-t border-gray-200 mt-8">
 		<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 text-center text-xs text-gray-400">
-			Données sources : <a href="https://euclid.eba.europa.eu/register/pir" class="underline hover:text-gray-600" target="_blank">EBA EUCLID PIR</a>
+			Source data: <a href="https://euclid.eba.europa.eu/register/pir" class="underline hover:text-gray-600" target="_blank">EBA EUCLID PIR</a>
 			· <a href="https://developer.regafi.banque-france.fr" class="underline hover:text-gray-600" target="_blank">REGAFI API</a>
-			· Aucune donnée n'est stockée sur le serveur.
+			· No data is stored on the server.
 		</div>
 	</footer> -->
 </div>
