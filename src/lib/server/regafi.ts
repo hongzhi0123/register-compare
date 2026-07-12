@@ -259,6 +259,12 @@ export function keepFrenchEntities(entities: NormalizedEntity[]): NormalizedEnti
 	return entities.filter((entity) => isFrenchCountry(entity.pays));
 }
 
+function normalizePays(pays: string | null | undefined): string | null {
+	if (!pays) return null;
+	const trimmed = pays.trim().toUpperCase();
+	return trimmed || null;
+}
+
 export function normalizeRegafiEntity(record: RegafiRecord): NormalizedEntity {
 	const f = record.fields;
 	const rolesByCountry = extractRegafiRolesByCountry(
@@ -270,7 +276,7 @@ export function normalizeRegafiEntity(record: RegafiRecord): NormalizedEntity {
 		siren: f?.siren || '',
 		denomination: f?.denomination || '(sans nom)',
 		ville: f?.ville || null,
-		pays: f?.pays || null,
+		pays: normalizePays(f?.pays),
 		categorie: f?.categorie || null,
 		lei: f?.lei || null,
 		idReferentiel: f?.id_referentiel,
@@ -282,7 +288,7 @@ export function normalizeRegafiEntity(record: RegafiRecord): NormalizedEntity {
 }
 
 export function normalizeFlatEntity(record: Record<string, unknown>): NormalizedEntity {
-	const country = record.pays ? String(record.pays) : null;
+	const country = record.pays ? String(record.pays).trim().toUpperCase() : null;
 	const rolesByCountry = extractRegafiRolesByCountry(
 		record.authorisations,
 		record.passports_sortants,

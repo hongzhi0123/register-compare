@@ -308,10 +308,15 @@ function getEntityValuesForKey(entity: NormalizedEntity, key: string): string[] 
 function matchesExcludeFilter(values: string[], exclude: string[]): boolean {
 	if (exclude.length === 0) return true;
 	const normalizedExclude = new Set(
-		exclude.map((v) => v.trim().toLowerCase()).filter(Boolean)
+		exclude.map((v) => v.trim().toLowerCase())
 	);
 	const normalizedValues = values.map((v) => v.trim().toLowerCase()).filter(Boolean);
-	if (normalizedValues.length === 0) return !normalizedExclude.has('');
+	if (normalizedValues.length === 0) {
+		// Hide empty values when any exclude filter is active,
+		// unless user explicitly checked the __empty__ toggle
+		// (which removes '' from the exclude list).
+		return !normalizedExclude.has('');
+	}
 	// Show if at least one value is NOT excluded (OR logic for multi-value fields)
 	return !normalizedValues.every((v) => normalizedExclude.has(v));
 }

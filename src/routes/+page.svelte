@@ -657,6 +657,8 @@
                 const allValues = getExcludeOptions(side, key)
                     .filter((o) => o.value !== '__all__' && o.value !== '__empty__')
                     .map((o) => o.value);
+                // Also exclude empty values when hiding all
+                allValues.push('');
                 setExcludeFilter(side, key, allValues);
             }
             return;
