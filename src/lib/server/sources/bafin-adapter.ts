@@ -1,7 +1,14 @@
-import type { NormalizedEntity, CountryRoles } from '$lib/types';
+﻿import type { NormalizedEntity, CountryRoles, ErlaubnisDetail } from '$lib/types';
 import { parseCsv } from './csv-parser';
 import { extractRoleFromErlaubnis } from './bafin-role-map';
 import type { ParseInput } from './types';
+
+interface ErlaubnisEntry {
+	text: string;
+	startDate: string | null;
+	endDate: string | null;
+	endReason: string | null;
+}
 
 export async function parseBafinEntities(input: ParseInput): Promise<NormalizedEntity[]> {
 	if (!input.text) throw new Error('BaFin parser requires CSV text');
@@ -10,21 +17,21 @@ export async function parseBafinEntities(input: ParseInput): Promise<NormalizedE
 	if (rawRows.length === 0) return [];
 
 	// Group continuation rows: rows with empty NAME belong to the previous company
-	const groups: { base: Record<string, string>; erlaubnisse: string[] }[] = [];
+	const groups: { base: Record<string, string>; erlaubnisse: ErlaubnisEntry[] }[] = [];
 
 	for (const row of rawRows) {
 		const name = (row['NAME'] ?? '').trim();
 		if (name) {
-			const erlaubnis = (row['ERLAUBNISSE/ZULASSUNG/TÄTIGKEITEN'] ?? '').trim();
+			const entry = buildErlaubnisEntry(row);
 			groups.push({
 				base: row,
-				erlaubnisse: erlaubnis ? [erlaubnis] : []
+				erlaubnisse: entry.text ? [entry] : []
 			});
 		} else {
 			// Continuation row - add Erlaubnis to the previous company
-			const erlaubnis = (row['ERLAUBNISSE/ZULASSUNG/TÄTIGKEITEN'] ?? '').trim();
-			if (erlaubnis && groups.length > 0) {
-				groups[groups.length - 1].erlaubnisse.push(erlaubnis);
+			const entry = buildErlaubnisEntry(row);
+			if (entry.text && groups.length > 0) {
+				groups[groups.length - 1].erlaubnisse.push(entry);
 			}
 		}
 	}
@@ -32,7 +39,37 @@ export async function parseBafinEntities(input: ParseInput): Promise<NormalizedE
 	return groups.map((group) => bafinRowToEntity(group.base, group.erlaubnisse));
 }
 
-function bafinRowToEntity(row: Record<string, string>, erlaubnisse: string[]): NormalizedEntity {
+function buildErlaubnisEntry(row: Record<string, string>): ErlaubnisEntry {
+	return {
+		text: (row['ERLAUBNISSE/ZULASSUNG/TÄTIGKEITEN'] ?? '').trim(),
+		startDate: (row['ERTEILUNGSDATUM'] ?? '').trim() || null,
+		endDate: (row['ENDE AM'] ?? '').trim() || null,
+		endReason: (row['ENDEGRUND'] ?? '').trim() || null
+	};
+}
+
+/**
+ * Extract the comparable ID from a BaFin BAK NR value.
+ * Handles both plain numbers ("149489") and composite formats
+ * like "1302032/BAKNR:148509" — in the latter case, takes the
+ * part after the last colon.
+ */
+function extractBakNrForSiren(raw: string): string {
+	const trimmed = raw.trim();
+	if (!trimmed) return '';
+
+	// Composite format: "1302032/BAKNR:148509" → "148509"
+	const colonIndex = trimmed.lastIndexOf(':');
+	if (colonIndex >= 0) {
+		const afterColon = trimmed.slice(colonIndex + 1).replace(/\D/g, '');
+		if (afterColon) return afterColon;
+	}
+
+	// Plain number: "149489"
+	return trimmed;
+}
+
+function bafinRowToEntity(row: Record<string, string>, erlaubnisse: ErlaubnisEntry[]): NormalizedEntity {
 	const name = (row['NAME'] ?? '').trim();
 	const ort = (row['ORT'] ?? '').trim();
 	const land = (row['LAND'] ?? '').trim();
@@ -41,8 +78,9 @@ function bafinRowToEntity(row: Record<string, string>, erlaubnisse: string[]): N
 
 	// Extract PSD2 roles from Erlaubnisse
 	const roles = new Set<string>();
-	for (const erlaubnis of erlaubnisse) {
-		const role = extractRoleFromErlaubnis(erlaubnis);
+	for (const entry of erlaubnisse) {
+		if (entry.endDate) continue; // expired permission
+			const role = extractRoleFromErlaubnis(entry.text, gattung);
 		if (role) roles.add(role);
 	}
 
@@ -56,8 +94,15 @@ function bafinRowToEntity(row: Record<string, string>, erlaubnisse: string[]): N
 		});
 	}
 
+	const erlaubnisseDetails: ErlaubnisDetail[] = erlaubnisse.map((e) => ({
+		text: e.text,
+		startDate: e.startDate,
+		endDate: e.endDate,
+		endReason: e.endReason
+	}));
+
 	return {
-		siren: '',
+		siren: extractBakNrForSiren(row['BAK NR'] ?? ''),
 		denomination: name || '(sans nom)',
 		ville: ort || null,
 		pays: land || null,
@@ -66,6 +111,7 @@ function bafinRowToEntity(row: Record<string, string>, erlaubnisse: string[]): N
 		source: 'bafin',
 		rolesByCountry,
 		rolesSummary: roles.size > 0 ? [...roles].join(', ') : '',
+		erlaubnisseDetails: erlaubnisseDetails.length > 0 ? erlaubnisseDetails : undefined,
 		extra: {
 			bakNr: (row['BAK NR'] ?? '').trim() || null,
 			regNr: (row['REG NR'] ?? '').trim() || null,
@@ -76,7 +122,7 @@ function bafinRowToEntity(row: Record<string, string>, erlaubnisse: string[]): N
 			gattung: gattung || null,
 			schlichtungsstelle: (row['SCHLICHTUNGSSTELLE'] ?? '').trim() || null,
 			handelsnamen: (row['HANDELSNAMEN'] ?? '').trim() || null,
-			erlaubnisseRaw: erlaubnisse.length > 0 ? erlaubnisse.join(' | ') : null
+			erlaubnisseRaw: erlaubnisse.length > 0 ? erlaubnisse.map((e) => e.text).join(' | ') : null
 		}
 	};
 }

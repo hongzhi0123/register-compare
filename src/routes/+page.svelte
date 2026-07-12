@@ -29,12 +29,6 @@
 		count?: number;
 	}
 
-	const SPECIAL_SELECT_OPTIONS: SelectOption[] = [
-		{ value: '__all__', label: 'All' },
-		{ value: '__empty__', label: 'Empty only' },
-		{ value: '__non_empty__', label: 'Exclude empty' }
-	];
-
 	const PAGE_SIZE = 10;
 
 	// --- Source metadata ---
@@ -50,7 +44,7 @@
 	let sortKeys = $state<Record<Side, string>>({ left: 'siren', right: 'siren' });
 	let sortDirs = $state<Record<Side, string>>({ left: 'asc', right: 'asc' });
 	let textFilters = $state<Record<Side, Record<string, string>>>({ left: {}, right: {} });
-	let selectFilters = $state<Record<Side, Record<string, string[]>>>({ left: {}, right: {} });
+	let excludeFilters = $state<Record<Side, Record<string, string[]>>>({ left: {}, right: {} });
 	let filterOptions = $state<Record<Side, Record<string, Array<{ value: string; count: number }>>>>({ left: {}, right: {} });
 	let openFilters = $state<Record<Side, string | null>>({ left: null, right: null });
 	let loading = $state<Record<Side, boolean>>({ left: false, right: false });
@@ -97,6 +91,36 @@
 
 	function hasTruncatedRoles(entity: NormalizedEntity): boolean {
 		return getAllRoles(entity).length > 3;
+	}
+
+	function formatErlaubnisLine(e: { text: string; startDate: string | null; endDate: string | null; endReason: string | null }): string {
+		let line = e.text;
+		const parts: string[] = [];
+		if (e.startDate) parts.push(e.startDate);
+		if (e.endDate) {
+			parts.push(`→ ${e.endDate}`);
+			if (e.endReason) parts.push(`(${e.endReason})`);
+		}
+		if (parts.length > 0) line += ` [${parts.join(' ')}]`;
+		return line;
+	}
+
+	function hasTruncatedErlaubnisse(entity: NormalizedEntity): boolean {
+		return (entity.erlaubnisseDetails?.length ?? 0) > 1;
+	}
+
+	function getAllErlaubnisseLines(entity: NormalizedEntity): string[] {
+		return (entity.erlaubnisseDetails ?? []).map(formatErlaubnisLine);
+	}
+
+	function getCategorieParts(entity: NormalizedEntity): string[] {
+		const raw = (entity.categorie ?? '').trim();
+		if (!raw) return [];
+		return raw.split(',').map((s) => s.trim()).filter(Boolean);
+	}
+
+	function hasTruncatedCategorie(entity: NormalizedEntity): boolean {
+		return getCategorieParts(entity).length > 1;
 	}
 
 	// --- Comparison mode ---
@@ -210,6 +234,9 @@
 	}
 
 	function setSource(side: Side, sourceId: string) {
+		// Clear any stale comparison results when the source changes
+		clearComparisonMode();
+
 		const meta = allSources.find((s) => s.id === sourceId) ?? null;
 		sources[side] = meta;
 		datasetIds[side] = null;
@@ -229,22 +256,25 @@
 			sf['rolesName'] = [];
 		}
 		textFilters[side] = tf;
-		selectFilters[side] = sf;
+		excludeFilters[side] = sf;
 		filterOptions[side] = {};
 		openFilters[side] = null;
 
-		// Restore column visibility from localStorage
+		// Restore column visibility from localStorage (merge new columns)
+		const defaults = new Set((meta?.columns ?? []).filter((c) => c.key !== 'rolesCountry').map((c) => c.key));
 		if (typeof localStorage !== 'undefined') {
 			const saved = localStorage.getItem(`columns-${sourceId}`);
 			if (saved) {
 				try {
-					visibleColumns[side] = new Set(JSON.parse(saved));
-				} catch { visibleColumns[side] = new Set(); }
+					const savedSet = new Set(JSON.parse(saved));
+					for (const key of defaults) savedSet.add(key);
+					visibleColumns[side] = savedSet;
+				} catch { visibleColumns[side] = defaults; }
 			} else {
-				visibleColumns[side] = new Set((meta?.columns ?? []).filter((c) => c.key !== 'rolesCountry').map((c) => c.key));
+				visibleColumns[side] = defaults;
 			}
 		} else {
-			visibleColumns[side] = new Set((meta?.columns ?? []).filter((c) => c.key !== 'rolesCountry').map((c) => c.key));
+			visibleColumns[side] = defaults;
 		}
 
 		// Auto-load latest dataset
@@ -268,7 +298,7 @@
 		loadingMessages[side] = 'Loading latest dataset...';
 		try {
 			const res = await fetch(
-				`/api/sources/${sourceId}?latest=1&page=1&pageSize=${PAGE_SIZE}&sortKey=${sortKeys[side]}&sortDir=${sortDirs[side]}&textFilters=${encodeURIComponent(JSON.stringify(textFilters[side]))}&selectFilters=${encodeURIComponent(JSON.stringify(selectFilters[side]))}`
+				`/api/sources/${sourceId}?latest=1&page=1&pageSize=${PAGE_SIZE}&sortKey=${sortKeys[side]}&sortDir=${sortDirs[side]}&textFilters=${encodeURIComponent(JSON.stringify(textFilters[side]))}&excludeFilters=${encodeURIComponent(JSON.stringify(excludeFilters[side]))}`
 			);
 			if (!res.ok) return;
 			const data = await res.json();
@@ -299,7 +329,7 @@
 				sortKey: sortKeys[side],
 				sortDir: sortDirs[side],
 				textFilters: JSON.stringify(textFilters[side]),
-				selectFilters: JSON.stringify(selectFilters[side])
+				excludeFilters: JSON.stringify(excludeFilters[side])
 			});
 
 			try {
@@ -344,8 +374,8 @@
 		textFilters[side] = { ...textFilters[side], [key]: value };
 	}
 
-	function setSelectFilter(side: Side, key: string, values: string[]) {
-		selectFilters[side] = { ...selectFilters[side], [key]: values };
+	function setExcludeFilter(side: Side, key: string, values: string[]) {
+		excludeFilters[side] = { ...excludeFilters[side], [key]: values };
 	}
 
 	function applyFilters(side: Side) {
@@ -400,9 +430,9 @@
 					leftSource: leftSrc,
 					rightSource: rightSrc,
 					leftTextFilters: textFilters.left,
-					leftSelectFilters: selectFilters.left,
+					leftExcludeFilters: excludeFilters.left,
 					rightTextFilters: textFilters.right,
-					rightSelectFilters: selectFilters.right,
+					rightExcludeFilters: excludeFilters.right,
 					options: {
 						columns: [
 							...(compareOnSiren ? ['siren' as const] : []),
@@ -541,7 +571,7 @@
 			sortKey: sortKeys[side],
 			sortDir: sortDirs[side],
 			textFilters: JSON.stringify(textFilters[side]),
-			selectFilters: JSON.stringify(selectFilters[side])
+			excludeFilters: JSON.stringify(excludeFilters[side])
 		});
 
 		const link = document.createElement('a');
@@ -578,6 +608,16 @@
 	function getCellValue(entity: NormalizedEntity, key: string): string {
 		if (key === 'rolesSummary') return deriveRolesSummary(entity);
 		if (key === 'rolesCountry' || key === 'rolesName') return '-';
+		if (key === 'erlaubnisseDetails') {
+			const details = entity.erlaubnisseDetails;
+			if (!details || details.length === 0) return '-';
+			const first = formatErlaubnisLine(details[0]);
+			return details.length > 1 ? `${first} +${details.length - 1}` : first;
+		}
+		if (key === 'categorie' && hasTruncatedCategorie(entity)) {
+			const parts = getCategorieParts(entity);
+			return `${parts[0]} +${parts.length - 1}`;
+		}
 		if (key.startsWith('extra:')) {
 			const val = entity.extra?.[key.slice(6)];
 			return val ?? '-';
@@ -587,34 +627,62 @@
 	}
 
 	// --- Filter helpers ---
-	function getSelectOptions(side: Side, key: string): SelectOption[] {
+	function hasActiveFilter(side: Side, key: string): boolean {
+		const textVal = (textFilters[side][key] ?? '').trim();
+		if (textVal) return true;
+		const selectVal = excludeFilters[side][key] ?? [];
+		if (selectVal.length > 0) return true;
+		return false;
+	}
+
+	function getExcludeOptions(side: Side, key: string): SelectOption[] {
 		const dynamic = (filterOptions[side][key] ?? []).map((v) => {
 			if (typeof v === 'string') return { value: v, label: v };
 			return { value: v.value, label: v.value, count: v.count };
 		});
-		return [...SPECIAL_SELECT_OPTIONS.filter((o) => o.value !== '__all__'), ...dynamic];
+		const nonEmptyCount = dynamic.reduce((sum, o) => sum + (o.count ?? 0), 0);
+		const hasEmpty = nonEmptyCount < counts[side];
+		const options: SelectOption[] = [{ value: '__all__', label: 'All' }];
+		if (hasEmpty) options.push({ value: '__empty__', label: 'Empty' });
+		options.push(...dynamic);
+		return options;
+	}
+	function toggleExcludeValue(side: Side, key: string, value: string) {
+
+		if (value === '__all__') {
+            const current = excludeFilters[side][key] ?? [];
+            if (current.length > 0) {
+                setExcludeFilter(side, key, []);
+            } else {
+                const allValues = getExcludeOptions(side, key)
+                    .filter((o) => o.value !== '__all__' && o.value !== '__empty__')
+                    .map((o) => o.value);
+                setExcludeFilter(side, key, allValues);
+            }
+            return;
+        }
+        if (value === '__empty__') {
+            const current = new Set(excludeFilters[side][key] ?? []);
+            if (current.has('')) current.delete('');
+            else current.add('');
+            setExcludeFilter(side, key, [...current]);
+            return;
+        }
+        const current = excludeFilters[side][key] ?? [];
+        const set = new Set(current);
+        if (set.has(value)) set.delete(value);
+        else set.add(value);
+        setExcludeFilter(side, key, [...set]);
 	}
 
-	function getSelectFilterLabel(side: Side, key: string): string {
-		const selected = selectFilters[side][key] ?? [];
-		if (selected.length === 0) return 'All';
-		if (selected.length === 1) {
-			const special = SPECIAL_SELECT_OPTIONS.find((o) => o.value === selected[0]);
-			return special?.label ?? selected[0];
-		}
-		return `${selected.length} selections`;
-	}
-
-	function toggleSelectValue(side: Side, key: string, value: string) {
-		const current = selectFilters[side][key] ?? [];
-		const set = new Set(current);
-		if (set.has(value)) set.delete(value);
-		else set.add(value);
-		setSelectFilter(side, key, [...set]);
-	}
-
-	function isSelectChecked(side: Side, key: string, value: string): boolean {
-		return (selectFilters[side][key] ?? []).includes(value);
+	function isNotExcluded(side: Side, key: string, value: string): boolean {
+		if (value === '__all__') {
+            return (excludeFilters[side][key] ?? []).length === 0;
+        }
+        if (value === '__empty__') {
+            return !(excludeFilters[side][key] ?? []).includes('');
+        }
+        return !(excludeFilters[side][key] ?? []).includes(value);
 	}
 
 	// --- Lifecycle ---
@@ -629,7 +697,7 @@
 		<div class="flex flex-wrap items-center gap-4">
 			<label class="flex items-center gap-2 text-sm">
 				<input type="checkbox" bind:checked={compareOnSiren} class="rounded" />
-				Compare by SIREN
+				Compare by ID
 			</label>
 			<label class="flex items-center gap-2 text-sm">
 				<input type="checkbox" bind:checked={compareOnName} class="rounded" />
@@ -713,7 +781,7 @@
 								class="rounded border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50"
 								onclick={() => toggleColumnMenu(s)}
 							>
-								Colonnes
+								Columns
 							</button>
 							{#if columnMenuOpen[s]}
 								<div class="absolute right-0 z-40 mt-1 w-64 rounded border border-gray-300 bg-white p-2 shadow-lg">
@@ -743,7 +811,7 @@
 							class="rounded border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50"
 							onclick={() => openExportDialog(s)}
 						>
-							Exporter
+							Export
 						</button>
 						<!-- Upload -->
 						{#if sources[s]}
@@ -807,7 +875,7 @@
 					</div>
 				{:else}
 					<!-- Table -->
-					<div class="relative overflow-x-auto rounded-lg border border-gray-200">
+					<div class="relative rounded-lg border border-gray-200">
 						<!-- Page-loading overlay -->
 						{#if loading[s]}
 							<div class="absolute inset-0 z-20 flex items-center justify-center bg-white/60 backdrop-blur-sm">
@@ -820,7 +888,7 @@
 							</div>
 						</div>
 						{/if}
-						<table class="min-w-full text-sm">
+						<table class="w-full table-fixed text-sm">
 							<thead class="bg-gray-50">
 								<tr>
 									{#each getVisibleColumns(s) as col (col.key)}
@@ -846,7 +914,7 @@
 												<div class="relative mt-1" data-filter-side={s} data-filter-key={col.key}>
 													<button
 														type="button"
-														class="text-xs text-gray-400 hover:text-gray-600"
+														class="text-xs {hasActiveFilter(s, col.key) ? 'text-blue-600 font-bold' : 'text-gray-400'} hover:text-gray-600"
 														onclick={() => toggleFilterMenu(s, col.key)}
 													>
 														{#if col.filterType === 'text'}
@@ -870,12 +938,12 @@
 															{/if}
 															{#if col.filterType === 'select' || col.filterType === 'text-select'}
 																<div class="mt-1 max-h-40 overflow-y-auto">
-																	{#each getSelectOptions(s, col.key) as opt}
+																	{#each getExcludeOptions(s, col.key) as opt}
 																		<label class="flex items-center gap-2 py-0.5 text-xs hover:bg-gray-50 px-1 rounded whitespace-nowrap">
 																			<input
 																				type="checkbox"
-																				checked={isSelectChecked(s, col.key, opt.value)}
-																				onchange={() => toggleSelectValue(s, col.key, opt.value)}
+																				checked={isNotExcluded(s, col.key, opt.value)}
+																				onchange={() => toggleExcludeValue(s, col.key, opt.value)}
 																				class="rounded"
 																			/>
 																			{opt.label}{#if opt.count != null} <span class="text-gray-400">({opt.count.toLocaleString()})</span>{/if}
@@ -885,21 +953,21 @@
 																																<button
 																																	type="button"
 																																	class="mt-1 block w-full text-left px-1 py-0.5 text-xs text-gray-400 hover:text-gray-600"
-																																	onclick={() => setSelectFilter(s, col.key, [])}
+																																	onclick={() => setExcludeFilter(s, col.key, [])}
 																																>
-																																	Deselect all
+																																	Reset
 																																</button>
 															{/if}
 															{#if col.key === 'rolesSummary'}
 																<div class="mt-2 border-t border-gray-200 pt-2">
 																	<div class="mb-1 text-xs font-medium text-gray-500">Limit to country</div>
 																	<div class="max-h-32 overflow-y-auto">
-																		{#each getSelectOptions(s, 'rolesCountry') as opt}
+																		{#each getExcludeOptions(s, 'rolesCountry') as opt}
 																			<label class="flex items-center gap-2 py-0.5 text-xs hover:bg-gray-50 px-1 rounded whitespace-nowrap">
 																				<input
 																					type="checkbox"
-																					checked={isSelectChecked(s, 'rolesCountry', opt.value)}
-																					onchange={() => toggleSelectValue(s, 'rolesCountry', opt.value)}
+																					checked={isNotExcluded(s, 'rolesCountry', opt.value)}
+																					onchange={() => toggleExcludeValue(s, 'rolesCountry', opt.value)}
 																					class="rounded"
 																				/>
 																				{opt.label}{#if opt.count != null} <span class="text-gray-400">({opt.count.toLocaleString()})</span>{/if}
@@ -909,9 +977,9 @@
 																	<button
 																		type="button"
 																		class="mt-1 block w-full text-left px-1 py-0.5 text-xs text-gray-400 hover:text-gray-600"
-																		onclick={() => setSelectFilter(s, 'rolesCountry', [])}
+																		onclick={() => setExcludeFilter(s, 'rolesCountry', [])}
 																	>
-																		Deselect all
+																		Reset
 																	</button>
 																</div>
 															{/if}
@@ -934,7 +1002,7 @@
 								{#each getDisplayItems(s) as entity, i (entity.siren + '-' + entity.denomination + '-' + i)}
 									<tr class="hover:bg-gray-50">
 										{#each getVisibleColumns(s) as col (col.key)}
-											<td class="px-3 py-2 whitespace-nowrap text-gray-900" class:font-mono={col.key === 'siren' || col.key === 'lei'}>
+											<td class="px-3 py-2 text-gray-900 {col.key === 'erlaubnisseDetails' ? 'whitespace-pre-wrap' : 'truncate'}" class:font-mono={col.key === 'siren' || col.key === 'lei'}>
 												{#if col.key === 'rolesSummary' && hasTruncatedRoles(entity)}
 	<span class="roles-cell group relative cursor-help">
 		{getCellValue(entity, col.key)}
@@ -947,9 +1015,51 @@
 			</span>
 		</span>
 	</span>
-{:else}
-	{getCellValue(entity, col.key)}
-{/if}
+{:else if col.key === 'erlaubnisseDetails' && hasTruncatedErlaubnisse(entity)}
+		<span class="roles-cell group relative cursor-help">
+			{getCellValue(entity, col.key)}
+			<span class="roles-tooltip invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all delay-[1500ms] duration-150 absolute top-full right-0 z-50 mt-1 max-w-3xl rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-lg">
+				<span class="mb-1 block font-semibold text-gray-700">{entity.denomination || entity.siren} &middot; {(entity.erlaubnisseDetails ?? []).length} permissions</span>
+				<div class="max-h-72 overflow-y-auto">
+					<table class="w-full text-xs border-collapse">
+						<thead class="sticky top-0 bg-gray-50">
+							<tr>
+								<th class="px-2 py-1 text-left font-medium text-gray-500 border-b border-gray-200 whitespace-nowrap">Erlaubnis</th>
+								<th class="px-2 py-1 text-left font-medium text-gray-500 border-b border-gray-200 whitespace-nowrap w-24">Start</th>
+								<th class="px-2 py-1 text-left font-medium text-gray-500 border-b border-gray-200 whitespace-nowrap w-24">Ende</th>
+								<th class="px-2 py-1 text-left font-medium text-gray-500 border-b border-gray-200 whitespace-nowrap w-40">Grund</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each (entity.erlaubnisseDetails ?? []) as ed}
+								{@const expired = ed.endDate != null}
+								<tr class="border-b border-gray-100 last:border-0 hover:bg-blue-50 {expired ? 'bg-gray-50/50' : ''}">
+									<td class="px-2 py-1 {expired ? 'text-gray-400 line-through' : 'text-gray-800'}">{ed.text}</td>
+									<td class="px-2 py-1 font-mono whitespace-nowrap {expired ? 'text-gray-400' : 'text-gray-500'}">{ed.startDate ?? '-'}</td>
+									<td class="px-2 py-1 font-mono whitespace-nowrap {expired ? 'text-gray-400' : 'text-gray-500'}">{ed.endDate ?? '-'}</td>
+									<td class="px-2 py-1 {expired ? 'text-gray-400' : 'text-gray-500'}">{ed.endReason ?? '-'}</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			</span>
+			</span>
+	{:else if col.key === 'categorie' && hasTruncatedCategorie(entity)}
+		<span class="roles-cell group relative cursor-help">
+			{getCellValue(entity, col.key)}
+			<span class="roles-tooltip invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all delay-[1500ms] duration-150 absolute top-full left-0 z-50 mt-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-lg">
+				<span class="mb-1 block font-semibold text-gray-700">{entity.denomination || entity.siren}</span>
+				<div class="flex flex-wrap gap-1 text-gray-600">
+					{#each getCategorieParts(entity) as part}
+						<span class="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-700">{part}</span>
+					{/each}
+				</div>
+			</span>
+		</span>
+	{:else}
+		{getCellValue(entity, col.key)}
+	{/if}
 											</td>
 										{/each}
 									</tr>
@@ -982,7 +1092,7 @@
 									disabled={pages[s] <= 1}
 									onclick={() => { pages[s]--; if (!compareModeActive) fetchPage(s); }}
 								>
-									Prec.
+									Prev.
 								</button>
 								<button
 									type="button"
@@ -990,7 +1100,7 @@
 									disabled={pages[s] >= Math.ceil(getCount(s) / PAGE_SIZE)}
 									onclick={() => { pages[s]++; if (!compareModeActive) fetchPage(s); }}
 								>
-									Suiv.
+									Next
 								</button>
 							</div>
 						</div>
@@ -1102,7 +1212,7 @@
 					class="rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
 					onclick={exportToCsv}
 				>
-					Exporter CSV
+					Export CSV
 				</button>
 			</div>
 		</div>

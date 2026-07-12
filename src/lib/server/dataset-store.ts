@@ -1,7 +1,7 @@
 ﻿import { randomUUID } from 'node:crypto';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { NormalizedEntity, SourceId } from '$lib/types';
+import type { NormalizedEntity, SourceId, ErlaubnisDetail } from '$lib/types';
 import { getColumnsForSource, getColumnKeySet } from '$lib/server/sources/registry';
 
 export type DatasetKind = SourceId;
@@ -37,6 +37,36 @@ const datasetLoadProgress = new Map<string, DatasetLoadProgress>();
 
 const datasetCache = new Map<string, { stored: StoredDataset; accessedAt: number }>();
 const MAX_CACHED_DATASETS = 3;
+
+function formatErlaubnisEntry(e: ErlaubnisDetail): string {
+	let line = e.text;
+	const parts: string[] = [];
+	if (e.startDate) parts.push(e.startDate);
+	if (e.endDate) {
+		parts.push(`→ ${e.endDate}`);
+		if (e.endReason) parts.push(`(${e.endReason})`);
+	}
+	if (parts.length > 0) line += ` [${parts.join(' ')}]`;
+	return line;
+}
+
+function formatErlaubnisseForDisplay(details: ErlaubnisDetail[]): string {
+	return details.map(formatErlaubnisEntry).join('\n');
+}
+
+function formatErlaubnisseForCsv(details: ErlaubnisDetail[]): string {
+	return details
+		.map((e) => {
+			const fields = [
+				e.text,
+				e.startDate || '',
+				e.endDate || '',
+				e.endReason || ''
+			];
+			return fields.join(' | ');
+		})
+		.join(' ; ');
+}
 
 function setDatasetLoadProgress(
 	kind: DatasetKind,
@@ -256,25 +286,35 @@ function getEntityValuesForKey(entity: NormalizedEntity, key: string): string[] 
 		return value ? [String(value)] : [];
 	}
 
+	if (key === 'erlaubnisseDetails') {
+		const details = entity.erlaubnisseDetails;
+		if (!details || details.length === 0) return [];
+		return [formatErlaubnisseForDisplay(details)];
+	}
+
+	if (key === 'categorie') {
+		const raw = String((entity as unknown as Record<string, unknown>)[key] ?? '').trim();
+		if (!raw) return [];
+		return raw
+			.split(',')
+			.map((s) => s.trim())
+			.filter(Boolean);
+	}
+
 	const value = String((entity as unknown as Record<string, unknown>)[key] ?? '').trim();
 	return value ? [value] : [];
 }
 
-function matchesSelectValues(values: string[], selected: string[]): boolean {
-	const normalizedSelected = selected.map((value) => value.trim().toLowerCase()).filter(Boolean);
-	if (normalizedSelected.length === 0 || normalizedSelected.includes('__all__')) return true;
-
-	const hasEmpty = normalizedSelected.includes('__empty__');
-	const hasNonEmpty = normalizedSelected.includes('__non_empty__');
-	const exactValues = normalizedSelected.filter((value) => value !== '__empty__' && value !== '__non_empty__');
-	const normalizedValues = values.map((value) => value.trim().toLowerCase()).filter(Boolean);
-
-	if (exactValues.some((value) => normalizedValues.includes(value))) return true;
-	if (normalizedValues.length === 0) return hasEmpty;
-	if (normalizedValues.length > 0 && hasNonEmpty) return true;
-	return false;
+function matchesExcludeFilter(values: string[], exclude: string[]): boolean {
+	if (exclude.length === 0) return true;
+	const normalizedExclude = new Set(
+		exclude.map((v) => v.trim().toLowerCase()).filter(Boolean)
+	);
+	const normalizedValues = values.map((v) => v.trim().toLowerCase()).filter(Boolean);
+	if (normalizedValues.length === 0) return !normalizedExclude.has('');
+	// Show if at least one value is NOT excluded (OR logic for multi-value fields)
+	return !normalizedValues.every((v) => normalizedExclude.has(v));
 }
-
 export async function getLatestDatasetId(kind: DatasetKind): Promise<string | null> {
 	try {
 		const files = await readdir(STORAGE_DIR);
@@ -319,7 +359,7 @@ export async function getDatasetPage(
 		page: number;
 		pageSize: number;
 		textFilters: Record<string, string>;
-		selectFilters: Record<string, string[]>;
+		excludeFilters: Record<string, string[]>;
 		sortKey: DatasetSortKey;
 		sortDir: DatasetSortDirection;
 		progressRequestId?: string | null;
@@ -355,11 +395,11 @@ export async function getDatasetPage(
 	}
 
 
-	const selectedCountries = params.selectFilters['rolesCountry'] ?? [];
-	const selectedRoles = params.selectFilters['rolesSummary'] ?? [];
+	const selectedCountries = params.excludeFilters['rolesCountry'] ?? [];
+	const selectedRoles = params.excludeFilters['rolesSummary'] ?? [];
 	if (selectedRoles.length === 0) {
 		// Fallback to rolesName if rolesSummary not used
-		const namesRoles = params.selectFilters['rolesName'] ?? [];
+		const namesRoles = params.excludeFilters['rolesName'] ?? [];
 		if (namesRoles.length > 0) selectedRoles.push(...namesRoles);
 	}
 	if (selectedCountries.length > 0 && selectedRoles.length > 0) {
@@ -368,20 +408,20 @@ export async function getDatasetPage(
 			const pairs = getRoleCountryAndNamePairs(entity);
 			return pairs.some(
 				(pair) =>
-					matchesSelectValues([pair.country], selectedCountries) &&
-					matchesSelectValues([pair.role], selectedRoles)
+					matchesExcludeFilter([pair.country], selectedCountries) &&
+					matchesExcludeFilter([pair.role], selectedRoles)
 			);
 		});
 	} else {
 		filtered = filtered.filter((entity) => {
 			const countryValues = getEntityValuesForKey(entity, 'rolesCountry');
 			const roleValues = getEntityValuesForKey(entity, 'rolesName');
-			return matchesSelectValues(countryValues, selectedCountries) && matchesSelectValues(roleValues, selectedRoles);
+			return matchesExcludeFilter(countryValues, selectedCountries) && matchesExcludeFilter(roleValues, selectedRoles);
 		});
 	}
 
 	progress?.running(84, 'Application des filtres de sélection...');
-	for (const [rawKey, rawValue] of Object.entries(params.selectFilters)) {
+	for (const [rawKey, rawValue] of Object.entries(params.excludeFilters)) {
 		if (rawKey === 'rolesCountry' || rawKey === 'rolesName' || rawKey === 'rolesSummary') continue;
 		if (!allowedKeys.has(rawKey)) continue;
 		const selectedValues = rawValue || [];
@@ -390,13 +430,13 @@ export async function getDatasetPage(
 
 		filtered = filtered.filter((entity) => {
 			const values = getEntityValuesForKey(entity, rawKey);
-			return matchesSelectValues(values, selectedValues);
+			return matchesExcludeFilter(values, selectedValues);
 		});
 	}
 	progress?.running(76, 'Préparation des options de filtre...');
 	let filterOptions: FilterOptionsMap;
 	const selectOnlyKeys = new Set(getColumnsForSource(kind).filter((c) => c.filterType === 'select').map((c) => c.key));
-	const filterKeys = Array.from(new Set(Object.keys(params.selectFilters))).filter((k) => allowedKeys.has(k) && selectOnlyKeys.has(k));
+	const filterKeys = Array.from(new Set(Object.keys(params.excludeFilters))).filter((k) => allowedKeys.has(k) && selectOnlyKeys.has(k));
 	if (hasActiveFilters && Object.keys(stored.filterOptions).length > 0) {
 		// Merge: filtered counts + all stored values so nothing disappears
 		const filteredOptions = buildFilterOptionsWithCounts(filtered, filterKeys);
@@ -444,7 +484,7 @@ export async function getLatestDatasetPage(
 		page: number;
 		pageSize: number;
 		textFilters: Record<string, string>;
-		selectFilters: Record<string, string[]>;
+		excludeFilters: Record<string, string[]>;
 		sortKey: DatasetSortKey;
 		sortDir: DatasetSortDirection;
 		progressRequestId?: string | null;
@@ -484,7 +524,7 @@ export async function getFilteredEntities(
 	kind: DatasetKind,
 	datasetId: string,
 	textFilters: Record<string, string>,
-	selectFilters: Record<string, string[]>,
+	excludeFilters: Record<string, string[]>,
 	sortKey: DatasetSortKey,
 	sortDir: DatasetSortDirection
 ): Promise<NormalizedEntity[]> {
@@ -504,14 +544,42 @@ export async function getFilteredEntities(
 		});
 	}
 
-	for (const [rawKey, rawValue] of Object.entries(selectFilters)) {
+	const selectedCountries = excludeFilters['rolesCountry'] ?? [];
+	const selectedRoles = excludeFilters['rolesSummary'] ?? [];
+	if (selectedRoles.length === 0) {
+		// Fallback to rolesName if rolesSummary not used
+		const namesRoles = excludeFilters['rolesName'] ?? [];
+		if (namesRoles.length > 0) selectedRoles.push(...namesRoles);
+	}
+	if (selectedCountries.length > 0 && selectedRoles.length > 0) {
+		// Combined filter: entity must have the selected role(s) in the selected country(ies)
+		hasFilters = true;
+		filtered = filtered.filter((entity) => {
+			const pairs = getRoleCountryAndNamePairs(entity);
+			return pairs.some(
+				(pair) =>
+					matchesExcludeFilter([pair.country], selectedCountries) &&
+					matchesExcludeFilter([pair.role], selectedRoles)
+			);
+		});
+	} else if (selectedCountries.length > 0 || selectedRoles.length > 0) {
+		hasFilters = true;
+		filtered = filtered.filter((entity) => {
+			const countryValues = getEntityValuesForKey(entity, 'rolesCountry');
+			const roleValues = getEntityValuesForKey(entity, 'rolesName');
+			return matchesExcludeFilter(countryValues, selectedCountries) && matchesExcludeFilter(roleValues, selectedRoles);
+		});
+	}
+
+	for (const [rawKey, rawValue] of Object.entries(excludeFilters)) {
+		if (rawKey === 'rolesCountry' || rawKey === 'rolesName' || rawKey === 'rolesSummary') continue;
 		if (!allowedKeys.has(rawKey)) continue;
 		const selectedValues = rawValue || [];
 		if (selectedValues.length === 0) continue;
 		hasFilters = true;
 		filtered = filtered.filter((entity) => {
 			const values = getEntityValuesForKey(entity, rawKey);
-			return matchesSelectValues(values, selectedValues);
+			return matchesExcludeFilter(values, selectedValues);
 		});
 	}
 
@@ -549,6 +617,10 @@ export function entitiesToCsv(entities: NormalizedEntity[], columnKeys: string[]
 					return entity.rolesSummary || '';
 				}
 				if (key === 'rolesCountry' || key === 'rolesName') return '';
+				if (key === 'erlaubnisseDetails') {
+					const details = entity.erlaubnisseDetails;
+					return details && details.length > 0 ? formatErlaubnisseForCsv(details) : '';
+				}
 				if (key.startsWith('extra:')) {
 					const extraKey = key.slice(6);
 					const value = entity.extra?.[extraKey];

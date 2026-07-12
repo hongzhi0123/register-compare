@@ -6,6 +6,7 @@
 
 	let result = $state<ComparisonResult | null>(null);
 	let error = $state<string | null>(null);
+	let loading = $state(true);
 
 	if (browser) {
 		const stored = sessionStorage.getItem('compareResult');
@@ -16,12 +17,17 @@
 				error = 'Error reading results';
 			}
 		} else {
-			error = 'Aucun résultat trouvé. Veuillez d\'abord lancer une comparaison.';
+			error = 'No results found. Run a comparison first.';
 		}
+		loading = false;
 	}
 </script>
 
-{#if error}
+{#if loading}
+	<div class="text-center py-12">
+		<p class="text-gray-500">Loading...</p>
+	</div>
+{:else if error}
 	<div class="text-center py-12">
 		<p class="text-red-600">{error}</p>
 		<a href="/" class="mt-4 inline-block text-blue-600 underline">Back to home</a>

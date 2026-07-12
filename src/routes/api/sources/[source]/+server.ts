@@ -78,7 +78,7 @@ export async function GET({ params, url }) {
 		const page = Number(url.searchParams.get('page') || '1');
 		const pageSize = Number(url.searchParams.get('pageSize') || '10');
 		const textFilters = parseTextFilterMap(url.searchParams.get('textFilters'), allowedKeys);
-		const selectFilters = parseSelectFilterMap(url.searchParams.get('selectFilters'), allowedKeys);
+		const excludeFilters = parseExcludeFilterMap(url.searchParams.get('excludeFilters'), allowedKeys);
 		const sortParam = url.searchParams.get('sortKey');
 		const sortDir = url.searchParams.get('sortDir') === 'desc' ? 'desc' as const : 'asc' as const;
 		const sortKey = sortParam && (allowedKeys.includes(sortParam) || sortParam === 'none')
@@ -98,7 +98,7 @@ export async function GET({ params, url }) {
 				page: Number.isFinite(page) && page > 0 ? page : 1,
 				pageSize: Number.isFinite(pageSize) && pageSize > 0 ? Math.min(pageSize, 100000) : 10,
 				textFilters,
-				selectFilters,
+				excludeFilters,
 				sortKey,
 				sortDir,
 				progressRequestId
@@ -116,7 +116,7 @@ export async function GET({ params, url }) {
 				? columnsParam.split(',').filter((k) => allowedKeys.includes(k))
 				: allowedKeys;
 			const entities = await getFilteredEntities(
-				sourceId as SourceId, datasetId, textFilters, selectFilters, sortKey, sortDir
+				sourceId as SourceId, datasetId, textFilters, excludeFilters, sortKey, sortDir
 			);
 			const csv = entitiesToCsv(entities, columnKeys, sourceId as SourceId);
 			return new Response(csv, {
@@ -136,7 +136,7 @@ export async function GET({ params, url }) {
 			page: Number.isFinite(page) && page > 0 ? page : 1,
 			pageSize: Number.isFinite(pageSize) && pageSize > 0 ? Math.min(pageSize, 100000) : 10,
 			textFilters,
-			selectFilters,
+			excludeFilters,
 			sortKey,
 			sortDir,
 			progressRequestId
@@ -169,7 +169,7 @@ function parseTextFilterMap(raw: string | null, allowedKeys: string[]): Record<s
 	}
 }
 
-function parseSelectFilterMap(raw: string | null, allowedKeys: string[]): Record<string, string[]> {
+function parseExcludeFilterMap(raw: string | null, allowedKeys: string[]): Record<string, string[]> {
 	if (!raw) return {};
 
 	try {

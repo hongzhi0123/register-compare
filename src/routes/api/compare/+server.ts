@@ -12,9 +12,9 @@ export async function POST({ request }) {
 			leftSource = 'regafi',
 			rightSource = 'eba',
 			leftTextFilters = {},
-			leftSelectFilters = {},
+			leftExcludeFilters = {},
 			rightTextFilters = {},
-			rightSelectFilters = {},
+			rightExcludeFilters = {},
 			options = {} as Partial<ComparisonOptions>,
 			left: leftInput,
 			right: rightInput
@@ -29,7 +29,7 @@ export async function POST({ request }) {
 					leftSource as SourceId,
 					leftDatasetId,
 					leftTextFilters as Record<string, string>,
-					leftSelectFilters as Record<string, string[]>,
+					leftExcludeFilters as Record<string, string[]>,
 					'none',
 					'asc'
 				),
@@ -37,7 +37,7 @@ export async function POST({ request }) {
 					rightSource as SourceId,
 					rightDatasetId,
 					rightTextFilters as Record<string, string>,
-					rightSelectFilters as Record<string, string[]>,
+					rightExcludeFilters as Record<string, string[]>,
 					'none',
 					'asc'
 				)

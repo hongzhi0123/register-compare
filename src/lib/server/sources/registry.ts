@@ -11,29 +11,29 @@ import { parseBafinEntities } from './bafin-adapter';
 import { parseFmaEntities } from './fma-adapter';
 
 const EBA_COLUMNS: SourceColumnDef[] = [
-	{ key: 'siren', label: 'SIREN', sortable: true, filterType: 'text-select', widthClass: 'w-28' },
-	{ key: 'denomination', label: 'Dénomination', sortable: true, filterType: 'text', widthClass: 'w-36' },
-	{ key: 'ville', label: 'Ville', sortable: true, filterType: 'text-select', widthClass: 'w-36' },
-	{ key: 'pays', label: 'Pays', sortable: true, filterType: 'select', widthClass: 'w-28' },
-	{ key: 'categorie', label: 'Catégorie', sortable: true, filterType: 'select', widthClass: 'w-44' },
-	{ key: 'rolesSummary', label: 'Rôles PSD2', sortable: false, filterType: 'select', widthClass: 'w-64' },
-	{ key: 'rolesCountry', label: 'Pays du rôle', sortable: false, filterType: 'select', widthClass: 'w-28' },
-	{ key: 'idReferentiel', label: 'ID référentiel', sortable: true, filterType: 'text-select', widthClass: 'w-36' },
-	{ key: 'cib', label: 'CIB', sortable: true, filterType: 'text-select', widthClass: 'w-36' },
-	{ key: 'lei', label: 'LEI', sortable: true, filterType: 'text-select', widthClass: 'w-44' },
-	{ key: 'entityType', label: "Type d'entité", sortable: true, filterType: 'select', widthClass: 'w-36' }
+	{ key: 'siren', label: 'ID', sortable: true, filterType: 'text-select' },
+	{ key: 'denomination', label: 'Name', sortable: true, filterType: 'text' },
+	{ key: 'ville', label: 'City', sortable: true, filterType: 'text-select' },
+	{ key: 'pays', label: 'Country', sortable: true, filterType: 'select' },
+	{ key: 'categorie', label: 'Category', sortable: true, filterType: 'select' },
+	{ key: 'rolesSummary', label: 'PSD2 Roles', sortable: false, filterType: 'select' },
+	{ key: 'rolesCountry', label: 'Role Country', sortable: false, filterType: 'select' },
+	{ key: 'idReferentiel', label: 'Reference ID', sortable: true, filterType: 'text-select' },
+	{ key: 'cib', label: 'CIB', sortable: true, filterType: 'text-select' },
+	{ key: 'lei', label: 'LEI', sortable: true, filterType: 'text-select' },
+	{ key: 'entityType', label: 'Entity Type', sortable: true, filterType: 'select' }
 ];
 
 const REGAFI_COLUMNS: SourceColumnDef[] = [
-	{ key: 'siren', label: 'SIREN', sortable: true, filterType: 'text-select', widthClass: 'w-28' },
-	{ key: 'denomination', label: 'Dénomination', sortable: true, filterType: 'text', widthClass: 'w-36' },
-	{ key: 'ville', label: 'Ville', sortable: true, filterType: 'text-select', widthClass: 'w-36' },
-	{ key: 'pays', label: 'Pays', sortable: true, filterType: 'select', widthClass: 'w-28' },
-	{ key: 'categorie', label: 'Catégorie', sortable: true, filterType: 'select', widthClass: 'w-44' },
-	{ key: 'rolesSummary', label: 'Rôles PSD2', sortable: false, filterType: 'select', widthClass: 'w-64' },
-	{ key: 'rolesCountry', label: 'Pays du rôle', sortable: false, filterType: 'select', widthClass: 'w-28' },
-	{ key: 'lei', label: 'LEI', sortable: true, filterType: 'text-select', widthClass: 'w-44' },
-	{ key: 'idReferentiel', label: 'ID référentiel', sortable: true, filterType: 'text-select', widthClass: 'w-44' }
+	{ key: 'siren', label: 'SIREN', sortable: true, filterType: 'text-select' },
+	{ key: 'denomination', label: 'Denomination', sortable: true, filterType: 'text' },
+	{ key: 'ville', label: 'Ville', sortable: true, filterType: 'text-select' },
+	{ key: 'pays', label: 'Pays', sortable: true, filterType: 'select' },
+	{ key: 'categorie', label: 'Categorie', sortable: true, filterType: 'select' },
+	{ key: 'rolesSummary', label: 'Roles PSD2', sortable: false, filterType: 'select' },
+	{ key: 'rolesCountry', label: 'Pays du role', sortable: false, filterType: 'select' },
+	{ key: 'lei', label: 'LEI', sortable: true, filterType: 'text-select' },
+	{ key: 'idReferentiel', label: 'ID referentiel', sortable: true, filterType: 'text-select' }
 ];
 
 async function ebaParse(input: ParseInput): Promise<NormalizedEntity[]> {
@@ -64,28 +64,28 @@ async function regafiParse(input: ParseInput): Promise<NormalizedEntity[]> {
 }
 
 const BAFIN_COLUMNS: SourceColumnDef[] = [
-	{ key: 'denomination', label: 'Name', sortable: true, filterType: 'text', widthClass: 'w-36' },
-	{ key: 'ville', label: 'Ort', sortable: true, filterType: 'text-select', widthClass: 'w-28' },
-	{ key: 'pays', label: 'Land', sortable: true, filterType: 'select', widthClass: 'w-24' },
-	{ key: 'categorie', label: 'Gattung', sortable: true, filterType: 'select', widthClass: 'w-44' },
-	{ key: 'lei', label: 'LEI', sortable: true, filterType: 'text-select', widthClass: 'w-36' },
-	{ key: 'rolesSummary', label: 'Rôles PSD2', sortable: false, filterType: 'select', widthClass: 'w-40' },
-	{ key: 'rolesCountry', label: 'Pays du rôle', sortable: false, filterType: 'select', widthClass: 'w-28' },
-	{ key: 'extra:bakNr', label: 'BAK NR', sortable: true, filterType: 'text-select', widthClass: 'w-24' },
-	{ key: 'extra:bafinId', label: 'BaFin-ID', sortable: true, filterType: 'text-select', widthClass: 'w-28' },
-	{ key: 'extra:regNr', label: 'REG NR', sortable: true, filterType: 'text-select', widthClass: 'w-24' },
-	{ key: 'extra:erlaubnisseRaw', label: 'Erlaubnisse', sortable: false, filterType: 'none', widthClass: 'w-64' }
+	{ key: 'siren', label: 'BAK NR', sortable: true, filterType: 'text-select' },
+	{ key: 'denomination', label: 'Name', sortable: true, filterType: 'text' },
+	{ key: 'ville', label: 'Ort', sortable: true, filterType: 'text-select' },
+	{ key: 'pays', label: 'Land', sortable: true, filterType: 'select' },
+	{ key: 'categorie', label: 'Gattung', sortable: true, filterType: 'select' },
+	{ key: 'lei', label: 'LEI', sortable: true, filterType: 'text-select' },
+	{ key: 'rolesSummary', label: 'Roles PSD2', sortable: false, filterType: 'select' },
+	{ key: 'rolesCountry', label: 'Pays du role', sortable: false, filterType: 'select' },
+	{ key: 'extra:bafinId', label: 'BaFin-ID', sortable: true, filterType: 'text-select' },
+	{ key: 'extra:regNr', label: 'REG NR', sortable: true, filterType: 'text-select' },
+	{ key: 'erlaubnisseDetails', label: 'Erlaubnisse', sortable: false, filterType: 'text' }
 ];
 
 const FMA_COLUMNS: SourceColumnDef[] = [
-	{ key: 'denomination', label: 'Name', sortable: true, filterType: 'text', widthClass: 'w-36' },
-	{ key: 'ville', label: 'Stadt/Ort', sortable: true, filterType: 'text-select', widthClass: 'w-28' },
-	{ key: 'pays', label: 'Land', sortable: true, filterType: 'select', widthClass: 'w-20' },
-	{ key: 'extra:plz', label: 'PLZ', sortable: true, filterType: 'text-select', widthClass: 'w-20' },
-	{ key: 'extra:strasse', label: 'Straße', sortable: true, filterType: 'text', widthClass: 'w-36' },
-	{ key: 'extra:bankleitzahl', label: 'Bankleitzahl', sortable: true, filterType: 'text-select', widthClass: 'w-28' },
-	{ key: 'extra:firmenbuchnummer', label: 'Firmenbuchnr.', sortable: true, filterType: 'text-select', widthClass: 'w-32' },
-	{ key: 'extra:website', label: 'Website', sortable: false, filterType: 'none', widthClass: 'w-36' }
+	{ key: 'denomination', label: 'Name', sortable: true, filterType: 'text' },
+	{ key: 'ville', label: 'Stadt/Ort', sortable: true, filterType: 'text-select' },
+	{ key: 'pays', label: 'Land', sortable: true, filterType: 'select' },
+	{ key: 'extra:plz', label: 'PLZ', sortable: true, filterType: 'text-select' },
+	{ key: 'extra:strasse', label: 'Strasse', sortable: true, filterType: 'text' },
+	{ key: 'extra:bankleitzahl', label: 'Bankleitzahl', sortable: true, filterType: 'text-select' },
+	{ key: 'extra:firmenbuchnummer', label: 'Firmenbuchnr.', sortable: true, filterType: 'text-select' },
+	{ key: 'extra:website', label: 'Website', sortable: false, filterType: 'none' }
 ];
 
 const SOURCES: Partial<Record<SourceId, SourceDefinition>> = {

@@ -156,7 +156,7 @@
 				onclick={exportFilteredToCsv}
 				disabled={filtered.length === 0}
 			>
-				Exporter ({filtered.length})
+				Export ({filtered.length})
 			</button>
 		</div>
 	</div>
@@ -165,8 +165,8 @@
 		{filtered.length} / {matches.length} results
 	</div>
 
-	<div class="overflow-x-auto">
-		<table class="min-w-full divide-y divide-gray-200 text-sm">
+	<div>
+		<table class="w-full table-fixed divide-y divide-gray-200 text-sm">
 			<thead class="bg-gray-50">
 				<tr>
 					<th class="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Statut</th>
@@ -181,22 +181,22 @@
 			<tbody class="divide-y divide-gray-200 bg-white">
 				{#each filtered as match}
 					<tr class="hover:bg-gray-50 cursor-pointer" onclick={() => toggleExpand(match.siren)}>
-						<td class="px-4 py-3 whitespace-nowrap">
+						<td class="px-4 py-3 truncate">
 							<span class="inline-flex px-2 py-0.5 text-xs font-medium rounded-full {statusColors[match.status]}">
 								{statusLabels[match.status]}
 							</span>
 						</td>
-						<td class="px-4 py-3 whitespace-nowrap font-mono text-xs">{match.siren}</td>
+						<td class="px-4 py-3 truncate font-mono text-xs">{match.siren}</td>
 						<td class="px-4 py-3">
 							<div class="text-gray-900">{match.left?.denomination || match.right?.denomination || '-'}</div>
 						</td>
-						<td class="px-4 py-3 whitespace-nowrap">{match.left?.categorie || match.right?.categorie || '-'}</td>
+						<td class="px-4 py-3 truncate">{match.left?.categorie || match.right?.categorie || '-'}</td>
 						<td class="px-4 py-3 max-w-xs">
 							<div class="text-gray-900 truncate" title={formatRolesByCountry(match)}>
 								{match.rolesSummary || '-'}
 							</div>
 						</td>
-						<td class="px-4 py-3 whitespace-nowrap">{match.left?.ville || match.right?.ville || '-'}</td>
+						<td class="px-4 py-3 truncate">{match.left?.ville || match.right?.ville || '-'}</td>
 						<td class="px-4 py-3">
 							<button class="text-blue-600 hover:text-blue-800 text-xs font-medium">
 								{expanded.has(match.siren) ? 'Masquer' : 'Voir'}

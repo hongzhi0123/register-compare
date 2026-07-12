@@ -9,6 +9,25 @@ function normalizeCountryCode(country: string | null): string {
 	return normalized;
 }
 
+/**
+ * Extract the comparable ID from an ENT_NAT_REF_COD value.
+ * German credit institutions use the format "8410551/BAKNR:105658"
+ * where the actual BaFin BAK NR is the part after the last colon.
+ * Plain numbers like "1629387" pass through unchanged.
+ */
+function normalizeSiren(raw: string): string {
+	const trimmed = raw.trim();
+	if (!trimmed) return '';
+
+	const colonIndex = trimmed.lastIndexOf(':');
+	if (colonIndex >= 0) {
+		const afterColon = trimmed.slice(colonIndex + 1).replace(/\D/g, '');
+		if (afterColon) return afterColon;
+	}
+
+	return trimmed;
+}
+
 const PSD2_SERVICE_LABELS: Record<string, string> = {
 	PS_010: 'Cash placement',
 	PS_020: 'Cash withdrawals',
@@ -402,7 +421,7 @@ function normalizeEbaEntity(raw: Record<string, unknown>): NormalizedEntity | nu
 		const flatRolesByCountry = extractRolesByCountry(raw, flatProps, flatPropsRaw, flatCountry);
 
 		return {
-			siren: companyId.trim(),
+			siren: normalizeSiren(companyId),
 			denomination: raw['denomination'] ? String(raw['denomination']).trim() : '',
 			ville: raw['ville'] ? String(raw['ville']).trim() : null,
 			pays: flatCountry,
@@ -421,7 +440,7 @@ function normalizeEbaEntity(raw: Record<string, unknown>): NormalizedEntity | nu
 	const propsRaw = extractPropertiesRaw(raw);
 	const country = extractCountry(props);
 
-	const siren = props['ENT_NAT_REF_COD'] || '';
+	const siren = normalizeSiren(props['ENT_NAT_REF_COD'] || '');
 	if (!siren) return null;
 	const rolesByCountry = extractRolesByCountry(raw, props, propsRaw, country || 'FRANCE');
 

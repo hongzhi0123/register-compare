@@ -71,6 +71,13 @@ export interface CountryRoleDetail {
 	roles: string[];
 }
 
+export interface ErlaubnisDetail {
+	text: string;
+	startDate: string | null;
+	endDate: string | null;
+	endReason: string | null;
+}
+
 export interface NormalizedEntity {
 	siren: string;
 	denomination: string;
@@ -86,6 +93,7 @@ export interface NormalizedEntity {
 	authorisations?: string | null;
 	rolesByCountry?: CountryRoles[];
 	rolesSummary?: string;
+	erlaubnisseDetails?: ErlaubnisDetail[];
 	extra?: Record<string, string | null>;
 }
 

@@ -26,7 +26,7 @@ function parseTextFilterMap(raw: string | null): Record<string, string> {
 	} catch { return {}; }
 }
 
-function parseSelectFilterMap(raw: string | null): Record<string, string[]> {
+function parseExcludeFilterMap(raw: string | null): Record<string, string[]> {
 	if (!raw) return {};
 	try {
 		const parsed = JSON.parse(raw);
@@ -70,7 +70,7 @@ export async function GET({ url }) {
 		const page = Number(url.searchParams.get('page') || '1');
 		const pageSize = Number(url.searchParams.get('pageSize') || '10');
 		const textFilters = parseTextFilterMap(url.searchParams.get('textFilters'));
-		const selectFilters = parseSelectFilterMap(url.searchParams.get('selectFilters'));
+		const excludeFilters = parseExcludeFilterMap(url.searchParams.get('excludeFilters'));
 		const sortParam = url.searchParams.get('sortKey');
 		const sortDir = url.searchParams.get('sortDir') === 'desc' ? 'desc' as const : 'asc' as const;
 		const sortKey = sortParam && (ALLOWED_FILTER_KEYS.includes(sortParam) || sortParam === 'none')
@@ -80,7 +80,7 @@ export async function GET({ url }) {
 			const result = await getLatestDatasetPage(SOURCE_ID, {
 				page: Number.isFinite(page) && page > 0 ? page : 1,
 				pageSize: Number.isFinite(pageSize) && pageSize > 0 ? Math.min(pageSize, 100000) : 10,
-				textFilters, selectFilters, sortKey, sortDir
+				textFilters, excludeFilters, sortKey, sortDir
 			});
 			return json({ success: true, ...result });
 		}
@@ -91,7 +91,7 @@ export async function GET({ url }) {
 			const columnKeys = columnsParam
 				? columnsParam.split(',').filter((k) => ALLOWED_FILTER_KEYS.includes(k))
 				: [...ALLOWED_FILTER_KEYS];
-			const entities = await getFilteredEntities(SOURCE_ID, datasetId, textFilters, selectFilters, sortKey, sortDir);
+			const entities = await getFilteredEntities(SOURCE_ID, datasetId, textFilters, excludeFilters, sortKey, sortDir);
 			const csv = entitiesToCsv(entities, columnKeys, SOURCE_ID);
 			return new Response(csv, {
 				status: 200,
@@ -107,7 +107,7 @@ export async function GET({ url }) {
 		const result = await getDatasetPage(SOURCE_ID, datasetId, {
 			page: Number.isFinite(page) && page > 0 ? page : 1,
 			pageSize: Number.isFinite(pageSize) && pageSize > 0 ? Math.min(pageSize, 100000) : 10,
-			textFilters, selectFilters, sortKey, sortDir
+			textFilters, excludeFilters, sortKey, sortDir
 		});
 		return json({ success: true, datasetId, ...result });
 	} catch (error) {
