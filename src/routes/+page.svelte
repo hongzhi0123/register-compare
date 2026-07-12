@@ -636,6 +636,18 @@
 	}
 
 	function getExcludeOptions(side: Side, key: string): SelectOption[] {
+		const col = sources[side]?.columns.find((c) => c.key === key);
+		const isTextSelect = col?.filterType === 'text-select';
+
+		if (isTextSelect) {
+			// text-select columns: only offer All / Empty / Non-Empty (values are mostly unique)
+			return [
+				{ value: '__all__', label: 'All' },
+				{ value: '__empty__', label: 'Empty' },
+				{ value: '__non_empty__', label: 'Non-Empty' }
+			];
+		}
+
 		const dynamic = (filterOptions[side][key] ?? []).map((v) => {
 			if (typeof v === 'string') return { value: v, label: v };
 			return { value: v.value, label: v.value, count: v.count };
@@ -670,6 +682,13 @@
             setExcludeFilter(side, key, [...current]);
             return;
         }
+        if (value === '__non_empty__') {
+            const current = new Set(excludeFilters[side][key] ?? []);
+            if (current.has('__non_empty__')) current.delete('__non_empty__');
+            else current.add('__non_empty__');
+            setExcludeFilter(side, key, [...current]);
+            return;
+        }
         const current = excludeFilters[side][key] ?? [];
         const set = new Set(current);
         if (set.has(value)) set.delete(value);
@@ -683,6 +702,9 @@
         }
         if (value === '__empty__') {
             return !(excludeFilters[side][key] ?? []).includes('');
+        }
+        if (value === '__non_empty__') {
+            return !(excludeFilters[side][key] ?? []).includes('__non_empty__');
         }
         return !(excludeFilters[side][key] ?? []).includes(value);
 	}

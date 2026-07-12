@@ -318,6 +318,8 @@ function matchesExcludeFilter(values: string[], exclude: string[]): boolean {
 		return !normalizedExclude.has('');
 	}
 	// Show if at least one value is NOT excluded (OR logic for multi-value fields)
+	// __non_empty__ sentinel: when present in exclude, hide all non-empty values
+	if (normalizedExclude.has('__non_empty__')) return false;
 	return !normalizedValues.every((v) => normalizedExclude.has(v));
 }
 export async function getLatestDatasetId(kind: DatasetKind): Promise<string | null> {
@@ -440,7 +442,7 @@ export async function getDatasetPage(
 	}
 	progress?.running(76, 'Préparation des options de filtre...');
 	let filterOptions: FilterOptionsMap;
-	const selectOnlyKeys = new Set(getColumnsForSource(kind).filter((c) => c.filterType === 'select').map((c) => c.key));
+	const selectOnlyKeys = new Set(getColumnsForSource(kind).filter((c) => c.filterType === 'select' || c.filterType === 'text-select').map((c) => c.key));
 	const filterKeys = Array.from(new Set(Object.keys(params.excludeFilters))).filter((k) => allowedKeys.has(k) && selectOnlyKeys.has(k));
 	if (hasActiveFilters && Object.keys(stored.filterOptions).length > 0) {
 		// Merge: filtered counts + all stored values so nothing disappears
