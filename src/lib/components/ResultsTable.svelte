@@ -1,4 +1,4 @@
-﻿<script lang="ts">
+<script lang="ts">
 	import type { ComparisonMatch } from '$lib/types';
 
 	let { matches, leftLabel = 'Gauche', rightLabel = 'Droite' } = $props<{
@@ -10,6 +10,36 @@
 	let search = $state('');
 	let statusFilter = $state<string>('all');
 	let expanded = $state<Set<string>>(new Set());
+	let sortKey = $state<string>('siren');
+	let sortDir = $state<'asc' | 'desc'>('asc');
+
+	function getSortValue(match: ComparisonMatch, key: string): string {
+		switch (key) {
+			case 'status':
+				return statusLabels[match.status] ?? match.status;
+			case 'siren':
+				return match.siren;
+			case 'denomination':
+				return (match.left?.denomination || match.right?.denomination || '').toLowerCase();
+			case 'categorie':
+				return (match.left?.categorie || match.right?.categorie || '').toLowerCase();
+			case 'rolesSummary':
+				return (match.rolesSummary || '').toLowerCase();
+			case 'ville':
+				return (match.left?.ville || match.right?.ville || '').toLowerCase();
+			default:
+				return '';
+		}
+	}
+
+	function toggleSort(key: string) {
+		if (sortKey === key) {
+			sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+		} else {
+			sortKey = key;
+			sortDir = 'asc';
+		}
+	}
 
 	const filtered = $derived(
 		matches.filter((m: ComparisonMatch) => {
@@ -21,6 +51,15 @@
 				if (!l.includes(q) && !r.includes(q) && !m.siren.includes(q)) return false;
 			}
 			return true;
+		})
+	);
+
+	const sorted = $derived(
+		[...filtered].sort((a, b) => {
+			const left = getSortValue(a, sortKey);
+			const right = getSortValue(b, sortKey);
+			const result = left.localeCompare(right, 'fr', { sensitivity: 'base' });
+			return sortDir === 'desc' ? -result : result;
 		})
 	);
 
@@ -50,7 +89,7 @@
 
 	function exportFilteredToCsv() {
 		const header = ['Statut', 'SIREN', 'Denomination', 'Categorie', 'Roles PSD2', 'Ville', 'Differences'];
-		const rows = filtered.map((match: ComparisonMatch) => {
+		const rows = sorted.map((match: ComparisonMatch) => {
 			const denomination = match.left?.denomination || match.right?.denomination || '';
 			const categorie = match.left?.categorie || match.right?.categorie || '';
 			const roles = match.rolesSummary || '';
@@ -154,32 +193,56 @@
 				type="button"
 				class="px-4 py-2 rounded-lg text-sm font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
 				onclick={exportFilteredToCsv}
-				disabled={filtered.length === 0}
+				disabled={sorted.length === 0}
 			>
-				Export ({filtered.length})
+				Export ({sorted.length})
 			</button>
 		</div>
 	</div>
 
 	<div class="text-sm text-gray-500">
-		{filtered.length} / {matches.length} results
+		{sorted.length} / {matches.length} results
 	</div>
 
 	<div>
 		<table class="w-full table-fixed divide-y divide-gray-200 text-sm">
 			<thead class="bg-gray-50">
 				<tr>
-					<th class="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Statut</th>
-					<th class="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">SIREN</th>
-					<th class="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Denomination</th>
-					<th class="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Categorie</th>
-					<th class="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Roles PSD2</th>
-					<th class="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Ville</th>
+					<th class="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">
+						<button class="hover:text-gray-700" onclick={() => toggleSort('status')}>
+							Statut{sortKey === 'status' ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
+						</button>
+					</th>
+					<th class="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">
+						<button class="hover:text-gray-700" onclick={() => toggleSort('siren')}>
+							SIREN{sortKey === 'siren' ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
+						</button>
+					</th>
+					<th class="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">
+						<button class="hover:text-gray-700" onclick={() => toggleSort('denomination')}>
+							Denomination{sortKey === 'denomination' ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
+						</button>
+					</th>
+					<th class="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">
+						<button class="hover:text-gray-700" onclick={() => toggleSort('categorie')}>
+							Categorie{sortKey === 'categorie' ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
+						</button>
+					</th>
+					<th class="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">
+						<button class="hover:text-gray-700" onclick={() => toggleSort('rolesSummary')}>
+							Roles PSD2{sortKey === 'rolesSummary' ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
+						</button>
+					</th>
+					<th class="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">
+						<button class="hover:text-gray-700" onclick={() => toggleSort('ville')}>
+							Ville{sortKey === 'ville' ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
+						</button>
+					</th>
 					<th class="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Details</th>
 				</tr>
 			</thead>
 			<tbody class="divide-y divide-gray-200 bg-white">
-				{#each filtered as match}
+				{#each sorted as match}
 					<tr class="hover:bg-gray-50 cursor-pointer" onclick={() => toggleExpand(match.siren)}>
 						<td class="px-4 py-3 truncate">
 							<span class="inline-flex px-2 py-0.5 text-xs font-medium rounded-full {statusColors[match.status]}">
@@ -264,7 +327,7 @@
 		</table>
 	</div>
 
-	{#if filtered.length === 0}
+	{#if sorted.length === 0}
 		<div class="text-center py-8 text-gray-500 text-sm">
 			No results match the filters.
 		</div>

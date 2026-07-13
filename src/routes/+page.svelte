@@ -182,9 +182,18 @@
 
 	function getDisplayItems(side: Side): NormalizedEntity[] {
 		const p = pages[side];
-			const items = compareModeActive ? getFilteredComparison(side) : pageItems[side];
+		const items = compareModeActive ? getFilteredComparison(side) : pageItems[side];
 		if (compareModeActive) {
-			return items.slice((p - 1) * PAGE_SIZE, p * PAGE_SIZE);
+			// Client-side sort for comparison mode
+			const key = sortKeys[side];
+			const dir = sortDirs[side];
+			const sorted = [...items].sort((a, b) => {
+				const left = getEntitySortValue(a, key);
+				const right = getEntitySortValue(b, key);
+				const result = left.localeCompare(right, 'fr', { sensitivity: 'base' });
+				return dir === 'desc' ? -result : result;
+			});
+			return sorted.slice((p - 1) * PAGE_SIZE, p * PAGE_SIZE);
 		}
 		return items;
 	}
@@ -461,6 +470,55 @@
 		compareLoading = false;
 	}
 
+		async function runFullComparison() {
+			const leftSrc = sources.left?.id;
+			const rightSrc = sources.right?.id;
+			const leftDsId = datasetIds.left;
+			const rightDsId = datasetIds.right;
+			if (!leftSrc || !rightSrc || !leftDsId || !rightDsId) return;
+
+			compareLoading = true;
+			try {
+				const res = await fetch('/api/compare', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						leftDatasetId: leftDsId,
+						rightDatasetId: rightDsId,
+						leftSource: leftSrc,
+						rightSource: rightSrc,
+						leftTextFilters: {},
+						leftExcludeFilters: {},
+						rightTextFilters: {},
+						rightExcludeFilters: {},
+						options: {
+							columns: [
+								...(compareOnSiren ? ['siren' as const] : []),
+								...(compareOnName ? ['denomination' as const] : [])
+							],
+							nameSimilarityThreshold: nameSimilarityPercent / 100
+						} satisfies Partial<ComparisonOptions>
+					})
+				});
+				const data = await res.json();
+				if (data.success) {
+					comparisonMatches = data.matches;
+					comparisonEntities.left = data.matches
+						.filter((m: ComparisonMatch) => m.status === 'onlyInLeft')
+						.map((m: ComparisonMatch) => m.left!);
+					comparisonEntities.right = data.matches
+						.filter((m: ComparisonMatch) => m.status === 'onlyInRight')
+						.map((m: ComparisonMatch) => m.right!);
+					pages.left = 1;
+					pages.right = 1;
+					compareSummary = data.summary;
+					const s = data.summary;
+					compareLastSummary = `${s.totalMatches} matchs, ${s.totalOnlyInLeft} uniq. gauche, ${s.totalOnlyInRight} uniq. droite`;
+				}
+			} catch { /* ignore */ }
+			compareLoading = false;
+		}
+
 	async function openCrossCheckCriteriaDialog() {
 		crossCheckCriteriaDialogOpen = true;
 	}
@@ -605,6 +663,21 @@
 		return roles.length > visible.length ? `${visible.join(', ')} +${roles.length - visible.length}` : visible.join(', ');
 	}
 
+	function getEntitySortValue(entity: NormalizedEntity, key: string): string {
+		if (key === 'rolesSummary') return deriveRolesSummary(entity).toLowerCase();
+		if (key === 'erlaubnisseDetails') {
+			const details = entity.erlaubnisseDetails;
+			if (!details || details.length === 0) return '';
+			return formatErlaubnisLine(details[0]).toLowerCase();
+		}
+		if (key.startsWith('extra:')) {
+			const val = entity.extra?.[key.slice(6)];
+			return (val ?? '').toLowerCase();
+		}
+		const raw = (entity as unknown as Record<string, unknown>)[key];
+		return (raw === null || raw === undefined ? '' : String(raw)).toLowerCase();
+	}
+
 	function getCellValue(entity: NormalizedEntity, key: string): string {
 		if (key === 'rolesSummary') return deriveRolesSummary(entity);
 		if (key === 'rolesCountry' || key === 'rolesName') return '-';
@@ -741,6 +814,7 @@
 			</div>
 		</div>
 		<div class="flex flex-wrap gap-2">
+			{#if !compareModeActive}
 			<button
 				type="button"
 				class="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
@@ -749,6 +823,15 @@
 			>
 				{compareLoading ? 'Comparing...' : 'Compare active filters'}
 			</button>
+				<button
+					type="button"
+					class="rounded border border-blue-300 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+					onclick={runFullComparison}
+					disabled={compareLoading}
+				>
+					{compareLoading ? 'Comparing...' : 'Compare all'}
+				</button>
+			{/if}
 			<button
 				type="button"
 				class="rounded border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
