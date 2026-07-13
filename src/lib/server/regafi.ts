@@ -249,6 +249,23 @@ export function parseRegafiJson(json: string): NormalizedEntity[] {
   }
 }
 
+/**
+ * Parse the CIB JSON string (e.g. `[{"code": "12448", "date": "1993-06-30"}]`)
+ * and return the first code, or null if empty/invalid.
+ */
+function extractCibCode(raw: string | null | undefined): string | null {
+	if (!raw || raw === '[]') return null;
+	try {
+		const parsed = JSON.parse(raw);
+		if (Array.isArray(parsed) && parsed.length > 0 && parsed[0]?.code) {
+			return String(parsed[0].code);
+		}
+		return null;
+	} catch {
+		return null;
+	}
+}
+
 function isFrenchCountry(value: string | null): boolean {
 	if (!value) return false;
 	const normalized = value.trim().toUpperCase();
@@ -280,6 +297,7 @@ export function normalizeRegafiEntity(record: RegafiRecord): NormalizedEntity {
 		categorie: f?.categorie || null,
 		lei: f?.lei || null,
 		idReferentiel: f?.id_referentiel,
+		cib: extractCibCode(f?.cib),
 		source: 'regafi',
 		authorisations: f?.authorisations ? JSON.stringify(f.authorisations) : null,
 		rolesByCountry,
@@ -302,6 +320,7 @@ export function normalizeFlatEntity(record: Record<string, unknown>): Normalized
 		categorie: record.categorie ? String(record.categorie) : null,
 		lei: record.lei ? String(record.lei) : null,
 		idReferentiel: record.id_referentiel ? String(record.id_referentiel) : undefined,
+		cib: extractCibCode(record.cib ? String(record.cib) : null),
 		source: 'regafi',
 		authorisations: record.authorisations ? JSON.stringify(record.authorisations) : null,
 		rolesByCountry,

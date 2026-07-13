@@ -25,6 +25,7 @@ const EBA_COLUMNS: SourceColumnDef[] = [
 ];
 
 const REGAFI_COLUMNS: SourceColumnDef[] = [
+	{ key: 'cib', label: 'CIB', sortable: true, filterType: 'text-select' },
 	{ key: 'siren', label: 'SIREN', sortable: true, filterType: 'text-select' },
 	{ key: 'denomination', label: 'Denomination', sortable: true, filterType: 'text' },
 	{ key: 'ville', label: 'Ville', sortable: true, filterType: 'text-select' },

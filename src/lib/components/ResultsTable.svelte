@@ -234,6 +234,9 @@
 										<div class="bg-blue-50 p-2 rounded">
 											<p class="font-medium text-blue-700 mb-1">{leftLabel}</p>
 											<p>ID: {match.left.idReferentiel || '-'}</p>
+											{#if match.left.cib}
+												<p>CIB: {match.left.cib}</p>
+											{/if}
 											<p>LEI: {match.left.lei || '-'}</p>
 											<p>Ville: {match.left.ville || '-'}</p>
 											<p>Categorie: {match.left.categorie || '-'}</p>
@@ -244,6 +247,9 @@
 										<div class="bg-purple-50 p-2 rounded">
 											<p class="font-medium text-purple-700 mb-1">{rightLabel}</p>
 											<p>Code: {match.right.entityCode || '-'}</p>
+											{#if match.right.cib}
+												<p>CIB: {match.right.cib}</p>
+											{/if}
 											<p>Ville: {match.right.ville || '-'}</p>
 											<p>Categorie: {match.right.categorie || '-'}</p>
 											<p>Roles PSD2: {formatEntityRolesByCountry(match.right.rolesByCountry)}</p>
