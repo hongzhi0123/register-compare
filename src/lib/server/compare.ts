@@ -213,73 +213,67 @@ export function compare(
 		const allSirens = new Set([...leftBySiren.keys(), ...rightBySiren.keys()]);
 		const matches: ComparisonMatch[] = [];
 
-		// Track which right/left entities have been matched (by siren key) to avoid duplicates
+		// Track which entities have been matched (by their siren) to avoid duplicates
 		const matchedRightSirens = new Set<string>();
 		const matchedLeftSirens = new Set<string>();
+
+		// Helper: try to resolve a CIB match for a left entity whose siren matches a right entity's CIB
+		function tryResolveRightViaCib(leftSiren: string): NormalizedEntity | null {
+			const match = rightByCib.get(leftSiren);
+			if (match && match.siren && !matchedRightSirens.has(match.siren)) {
+				return match;
+			}
+			return null;
+		}
+
+		// Helper: try to resolve a CIB match for a right entity whose siren matches a left entity's CIB
+		function tryResolveLeftViaCib(rightSiren: string): NormalizedEntity | null {
+			const match = leftByCib.get(rightSiren);
+			if (match && match.siren && !matchedLeftSirens.has(match.siren)) {
+				return match;
+			}
+			return null;
+		}
 
 		for (const siren of allSirens) {
 			const left = leftBySiren.get(siren) || null;
 			const right = rightBySiren.get(siren) || null;
 
-			let status: ComparisonMatch['status'];
-			const differences: string[] = [];
+			// Skip if either entity was already matched in a previous iteration
+			if (right && right.siren && matchedRightSirens.has(right.siren)) {
+				// Right entity already matched elsewhere; only process left if unmatched
+				if (left && left.siren && !matchedLeftSirens.has(left.siren)) {
+					matchedLeftSirens.add(left.siren);
+					matches.push(buildMatch(siren, left, null, 'onlyInLeft', []));
+				}
+				continue;
+			}
+			if (left && left.siren && matchedLeftSirens.has(left.siren)) {
+				// Left entity already matched elsewhere; only process right if unmatched
+				if (right && right.siren && !matchedRightSirens.has(right.siren)) {
+					matchedRightSirens.add(right.siren);
+					matches.push(buildMatch(siren, null, right, 'onlyInRight', []));
+				}
+				continue;
+			}
+
 			let resolvedLeft = left;
 			let resolvedRight = right;
+			const differences: string[] = [];
 
-			if (left && !right) {
-				// Try matching left's siren against right's CIB
-				const rightByCibMatch = rightByCib.get(left.siren);
-				if (rightByCibMatch && rightByCibMatch.siren && !matchedRightSirens.has(rightByCibMatch.siren)) {
-					resolvedRight = rightByCibMatch;
-					matchedRightSirens.add(rightByCibMatch.siren);
-				}
-			} else if (!left && right) {
-				// Try matching right's siren against left's CIB
-				const leftByCibMatch = leftByCib.get(right.siren);
-				if (leftByCibMatch && leftByCibMatch.siren && !matchedLeftSirens.has(leftByCibMatch.siren)) {
-					resolvedLeft = leftByCibMatch;
-					matchedLeftSirens.add(leftByCibMatch.siren);
-				}
+			// Try CIB cross-matching for entities without a direct siren match
+			if (resolvedLeft && !resolvedRight) {
+				resolvedRight = tryResolveRightViaCib(resolvedLeft.siren);
+			}
+			if (!resolvedLeft && resolvedRight) {
+				resolvedLeft = tryResolveLeftViaCib(resolvedRight.siren);
 			}
 
 			if (resolvedLeft && resolvedRight) {
-				// If we resolved via CIB but one side was already matched by siren on the other side,
-				// skip to avoid duplicate matches
-				if (resolvedRight.siren && matchedRightSirens.has(resolvedRight.siren) && right === null) {
-					status = 'onlyInLeft';
-					resolvedRight = null;
-				} else if (resolvedLeft.siren && matchedLeftSirens.has(resolvedLeft.siren) && left === null) {
-					status = 'onlyInRight';
-					resolvedLeft = null;
-				} else {
-					if (resolvedRight.siren) matchedRightSirens.add(resolvedRight.siren);
-					if (resolvedLeft.siren) matchedLeftSirens.add(resolvedLeft.siren);
+				// Confirm the match (both direct siren and CIB-resolved)
+				matchedRightSirens.add(resolvedRight.siren);
+				matchedLeftSirens.add(resolvedLeft.siren);
 
-					if (useName) {
-						const score = similarity(resolvedLeft.denomination, resolvedRight.denomination);
-						if (score < nameSimilarityThreshold) {
-							differences.push(
-								`Dénomination: "${resolvedLeft.denomination}" (gauche) ≠ "${resolvedRight.denomination}" (droite), similarité ${(score * 100).toFixed(1)}% (< ${(nameSimilarityThreshold * 100).toFixed(0)}%)`
-							);
-						}
-					}
-
-					if (differences.length === 0) {
-						status = 'match';
-					} else {
-						status = 'nameMismatch';
-					}
-
-					matches.push(buildMatch(siren, resolvedLeft, resolvedRight, status, differences));
-					continue;
-				}
-			}
-
-			if (resolvedLeft && !resolvedRight) {
-				status = 'onlyInLeft';
-			} else if (!resolvedLeft && resolvedRight) {
-				status = 'onlyInRight';
-			} else if (resolvedLeft && resolvedRight) {
 				if (useName) {
 					const score = similarity(resolvedLeft.denomination, resolvedRight.denomination);
 					if (score < nameSimilarityThreshold) {
@@ -289,91 +283,87 @@ export function compare(
 					}
 				}
 
-				if (differences.length === 0) {
-					status = 'match';
-				} else {
-					status = 'nameMismatch';
-				}
-
-				if (resolvedRight.siren) matchedRightSirens.add(resolvedRight.siren);
-				if (resolvedLeft.siren) matchedLeftSirens.add(resolvedLeft.siren);
-			} else {
-				continue;
+				const status: ComparisonMatch['status'] = differences.length === 0 ? 'match' : 'nameMismatch';
+				matches.push(buildMatch(siren, resolvedLeft, resolvedRight, status, differences));
+			} else if (resolvedLeft && !resolvedRight) {
+				matchedLeftSirens.add(resolvedLeft.siren);
+				matches.push(buildMatch(siren, resolvedLeft, null, 'onlyInLeft', []));
+			} else if (!resolvedLeft && resolvedRight) {
+				matchedRightSirens.add(resolvedRight.siren);
+				matches.push(buildMatch(siren, null, resolvedRight, 'onlyInRight', []));
 			}
-
-			matches.push(buildMatch(siren, resolvedLeft, resolvedRight, status, differences));
+			// else: both null, skip
 		}
 
-		// After the siren-based loop, try to match remaining orphans via CIB
-		// (entities whose CIB matches the other side's siren, but weren't caught in the main loop)
-		const orphanLeft = matches.filter((m) => m.status === 'onlyInLeft');
-		const orphanRight = matches.filter((m) => m.status === 'onlyInRight');
+		// Post-loop: try to match remaining orphans via CIB
+		// (entities whose CIB matches the other side's siren, but neither siren was in allSirens)
+		let orphanLeft = matches.filter((m) => m.status === 'onlyInLeft');
+		let orphanRight = matches.filter((m) => m.status === 'onlyInRight');
 
 		for (const orphan of orphanLeft) {
 			if (!orphan.left) continue;
-			const rightMatch = rightByCib.get(orphan.left.siren);
-			if (rightMatch && rightMatch.siren && !matchedRightSirens.has(rightMatch.siren)) {
-				// Find the corresponding onlyInRight entry for this right entity
-				const rightOrphanIndex = matches.findIndex(
-					(m) => m.status === 'onlyInRight' && m.right?.siren === rightMatch.siren
-				);
-				if (rightOrphanIndex >= 0) {
-					matchedRightSirens.add(rightMatch.siren);
-					const differences: string[] = [];
-					if (useName) {
-						const score = similarity(orphan.left.denomination, rightMatch.denomination);
-						if (score < nameSimilarityThreshold) {
-							differences.push(
-								`Dénomination: "${orphan.left.denomination}" (gauche) ≠ "${rightMatch.denomination}" (droite), similarité ${(score * 100).toFixed(1)}% (< ${(nameSimilarityThreshold * 100).toFixed(0)}%)`
-							);
-						}
-					}
-					const newStatus: ComparisonMatch['status'] = differences.length === 0 ? 'match' : 'nameMismatch';
-					// Update the onlyInLeft entry
-					matches[matches.indexOf(orphan)] = buildMatch(
-						orphan.siren,
-						orphan.left,
-						rightMatch,
-						newStatus,
-						differences
+			const rightMatch = tryResolveRightViaCib(orphan.left.siren);
+			if (!rightMatch) continue;
+
+			const rightOrphanIndex = orphanRight.findIndex(
+				(m) => m.right?.siren === rightMatch.siren
+			);
+			if (rightOrphanIndex < 0) continue;
+
+			matchedRightSirens.add(rightMatch.siren);
+			const diffs: string[] = [];
+			if (useName) {
+				const score = similarity(orphan.left.denomination, rightMatch.denomination);
+				if (score < nameSimilarityThreshold) {
+					diffs.push(
+						`Dénomination: "${orphan.left.denomination}" (gauche) ≠ "${rightMatch.denomination}" (droite), similarité ${(score * 100).toFixed(1)}% (< ${(nameSimilarityThreshold * 100).toFixed(0)}%)`
 					);
-					// Remove the onlyInRight entry
-					matches.splice(rightOrphanIndex, 1);
 				}
 			}
+			const newStatus: ComparisonMatch['status'] = diffs.length === 0 ? 'match' : 'nameMismatch';
+
+			const leftIdx = matches.indexOf(orphan);
+			matches[leftIdx] = buildMatch(orphan.siren, orphan.left, rightMatch, newStatus, diffs);
+			matches.splice(rightOrphanIndex, 1);
+
+			// Refresh orphan lists after modification
+			orphanLeft = matches.filter((m) => m.status === 'onlyInLeft');
+			orphanRight = matches.filter((m) => m.status === 'onlyInRight');
 		}
 
-		// Also try the reverse: match remaining onlyInRight via left's CIB
-		const remainingOrphanRight = matches.filter((m) => m.status === 'onlyInRight');
-		for (const orphan of remainingOrphanRight) {
+		// Reverse: match remaining onlyInRight via left's CIB
+		orphanLeft = matches.filter((m) => m.status === 'onlyInLeft');
+		orphanRight = matches.filter((m) => m.status === 'onlyInRight');
+
+		for (const orphan of orphanRight) {
 			if (!orphan.right) continue;
-			const leftMatch = leftByCib.get(orphan.right.siren);
-			if (leftMatch && leftMatch.siren && !matchedLeftSirens.has(leftMatch.siren)) {
-				const leftOrphanIndex = matches.findIndex(
-					(m) => m.status === 'onlyInLeft' && m.left?.siren === leftMatch.siren
-				);
-				if (leftOrphanIndex >= 0) {
-					matchedLeftSirens.add(leftMatch.siren);
-					const differences: string[] = [];
-					if (useName) {
-						const score = similarity(leftMatch.denomination, orphan.right.denomination);
-						if (score < nameSimilarityThreshold) {
-							differences.push(
-								`Dénomination: "${leftMatch.denomination}" (gauche) ≠ "${orphan.right.denomination}" (droite), similarité ${(score * 100).toFixed(1)}% (< ${(nameSimilarityThreshold * 100).toFixed(0)}%)`
-							);
-						}
-					}
-					const newStatus: ComparisonMatch['status'] = differences.length === 0 ? 'match' : 'nameMismatch';
-					matches[leftOrphanIndex] = buildMatch(
-						orphan.siren,
-						leftMatch,
-						orphan.right,
-						newStatus,
-						differences
+			const leftMatch = tryResolveLeftViaCib(orphan.right.siren);
+			if (!leftMatch) continue;
+
+			const leftOrphanIndex = orphanLeft.findIndex(
+				(m) => m.left?.siren === leftMatch.siren
+			);
+			if (leftOrphanIndex < 0) continue;
+
+			matchedLeftSirens.add(leftMatch.siren);
+			const diffs: string[] = [];
+			if (useName) {
+				const score = similarity(leftMatch.denomination, orphan.right.denomination);
+				if (score < nameSimilarityThreshold) {
+					diffs.push(
+						`Dénomination: "${leftMatch.denomination}" (gauche) ≠ "${orphan.right.denomination}" (droite), similarité ${(score * 100).toFixed(1)}% (< ${(nameSimilarityThreshold * 100).toFixed(0)}%)`
 					);
-					matches.splice(matches.indexOf(orphan), 1);
 				}
 			}
+			const newStatus: ComparisonMatch['status'] = diffs.length === 0 ? 'match' : 'nameMismatch';
+
+			const rightIdx = matches.indexOf(orphan);
+			matches[rightIdx] = buildMatch(orphan.siren, leftMatch, orphan.right, newStatus, diffs);
+			matches.splice(leftOrphanIndex, 1);
+
+			// Refresh orphan lists
+			orphanLeft = matches.filter((m) => m.status === 'onlyInLeft');
+			orphanRight = matches.filter((m) => m.status === 'onlyInRight');
 		}
 
 		return { matches, summary: buildSummary(matches, leftEntities.length, rightEntities.length) };
