@@ -52,6 +52,8 @@
 	let loadingPercents = $state<Record<Side, number | null>>({ left: null, right: null });
 	let visibleColumns = $state<Record<Side, Set<string>>>({ left: new Set(), right: new Set() });
 	let columnMenuOpen = $state<Record<Side, boolean>>({ left: false, right: false });
+	let columnWidths = $state<Record<Side, Record<string, number>>>({ left: {}, right: {} });
+	let colResize = $state<{ side: Side; key: string; startX: number; startWidth: number } | null>(null);
 
 	// --- Comparison state ---
 	let compareLoading = $state(false);
@@ -286,6 +288,9 @@
 			visibleColumns[side] = defaults;
 		}
 
+
+			// Restore column widths from localStorage
+			loadColumnWidths(side, sourceId);
 		// Auto-load latest dataset
 		loadLatest(side);
 	}
@@ -418,6 +423,48 @@
 
 	function hideAllColumns(side: Side) {
 		visibleColumns[side] = new Set();
+	}
+
+	// --- Column resize ---
+	function loadColumnWidths(side: Side, sourceId: string) {
+		if (typeof localStorage === 'undefined') return;
+		const saved = localStorage.getItem(`colWidths-${sourceId}`);
+		if (saved) {
+			try { columnWidths[side] = JSON.parse(saved); } catch { /* ignore */ }
+		}
+	}
+
+	function saveColumnWidths(side: Side, sourceId: string) {
+		if (typeof localStorage === 'undefined') return;
+		const widths = columnWidths[side];
+		if (Object.keys(widths).length > 0) {
+			localStorage.setItem(`colWidths-${sourceId}`, JSON.stringify(widths));
+		}
+	}
+
+	function onResizeStart(side: Side, key: string, e: MouseEvent) {
+		const th = (e.target as HTMLElement).closest('th');
+		colResize = { side, key, startX: e.clientX, startWidth: th?.offsetWidth ?? 100 };
+		e.preventDefault();
+	}
+
+	function onResizeMove(e: MouseEvent) {
+		if (!colResize) return;
+		const delta = e.clientX - colResize.startX;
+		const newWidth = Math.max(40, colResize.startWidth + delta);
+		columnWidths[colResize.side] = { ...columnWidths[colResize.side], [colResize.key]: newWidth };
+	}
+
+	function onResizeEnd() {
+		if (!colResize) return;
+		const srcId = sources[colResize.side]?.id;
+		if (srcId) saveColumnWidths(colResize.side, srcId);
+		colResize = null;
+	}
+
+	function getColWidth(side: Side, key: string): string {
+		const w = columnWidths[side]?.[key];
+		return w ? `${w}px` : '';
 	}
 
 	// --- Comparison ---
@@ -788,6 +835,8 @@
 	});
 </script>
 
+
+<svelte:window onmousemove={onResizeMove} onmouseup={onResizeEnd} />
 <div class="space-y-6">
 	<!-- Comparison Controls -->
 	<div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-300 bg-white p-4">
@@ -999,7 +1048,7 @@
 							<thead class="bg-gray-50">
 								<tr>
 									{#each getVisibleColumns(s) as col (col.key)}
-										<th class="px-3 py-2 text-left font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap {col.widthClass ?? ''}">
+											<th class="px-3 py-2 text-left font-medium text-gray-500 uppercase tracking-wider relative whitespace-nowrap {col.widthClass ?? ''}" style="width: {getColWidth(s, col.key)}">
 											<div class="flex items-center gap-1">
 												{#if col.sortable}
 													<button
@@ -1101,6 +1150,7 @@
 													{/if}
 												</div>
 											{/if}
+											<button type="button" aria-label="Resize column" class="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400 border-0 bg-transparent p-0" onmousedown={(e) => onResizeStart(s, col.key, e)}></button>
 										</th>
 									{/each}
 								</tr>
