@@ -122,7 +122,7 @@ export function createDatasetProgressReporter(kind: DatasetKind, requestId?: str
 }
 
 function getDatasetPath(kind: DatasetKind, datasetId: string): string {
-	if (!datasetId.startsWith(`${kind}-`) || !/^[a-z]+-[0-9]+-[a-f0-9]+$/i.test(datasetId)) {
+	if (!datasetId.startsWith(`${kind}-`) || !/^[a-z-]+-[0-9]+-[a-f0-9]+$/i.test(datasetId)) {
 		throw new Error('Identifiant de dataset invalide');
 	}
 
@@ -130,7 +130,7 @@ function getDatasetPath(kind: DatasetKind, datasetId: string): string {
 }
 
 function getDatasetTimestamp(datasetId: string): number {
-	const match = datasetId.match(/^[a-z]+-([0-9]+)-[a-f0-9]+$/i);
+	const match = datasetId.match(/^[a-z-]+-([0-9]+)-[a-f0-9]+$/i);
 	return match ? Number(match[1]) : 0;
 }
 
@@ -326,7 +326,13 @@ export async function getLatestDatasetId(kind: DatasetKind): Promise<string | nu
 	try {
 		const files = await readdir(STORAGE_DIR);
 		const latest = files
-			.filter((file) => file.startsWith(`${kind}-`) && file.endsWith('.json'))
+			.filter((file) => {
+				if (!file.startsWith(`${kind}-`) || !file.endsWith('.json')) return false;
+				// Exclude variant files: "eba-credit-*" also starts with "eba-" but belongs to a variant.
+				const afterKind = file.slice(kind.length + 1);
+				if (!kind.includes('-') && /^[a-z]/.test(afterKind)) return false;
+				return true;
+			})
 			.map((file) => file.replace(/\.json$/i, ''))
 			.sort((a, b) => getDatasetTimestamp(b) - getDatasetTimestamp(a))[0];
 

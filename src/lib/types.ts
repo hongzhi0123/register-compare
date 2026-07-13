@@ -1,4 +1,9 @@
-export type SourceId = 'regafi' | 'eba' | 'bafin' | 'fma';
+export type SourceId =
+	| 'regafi' | 'eba' | 'bafin' | 'fma'
+	| 'eba-credit' | 'eba-payment'
+	| 'regafi-credit' | 'regafi-payment'
+	| 'bafin-credit' | 'bafin-payment'
+	| 'fma-credit' | 'fma-payment';
 
 export type ComparisonStatus =
 	| 'match'

@@ -89,6 +89,17 @@ const FMA_COLUMNS: SourceColumnDef[] = [
 	{ key: 'extra:website', label: 'Website', sortable: false, filterType: 'none' }
 ];
 
+/** Wraps a parse function so every entity carries the variant's source ID. */
+function withSourceLabel(
+	sourceId: SourceId,
+	parseFn: (input: ParseInput) => Promise<NormalizedEntity[]>
+): (input: ParseInput) => Promise<NormalizedEntity[]> {
+	return async (input) => {
+		const entities = await parseFn(input);
+		return entities.map((e) => ({ ...e, source: sourceId }));
+	};
+}
+
 const SOURCES: Partial<Record<SourceId, SourceDefinition>> = {
 	eba: {
 		id: 'eba',
@@ -99,6 +110,24 @@ const SOURCES: Partial<Record<SourceId, SourceDefinition>> = {
 		columns: EBA_COLUMNS,
 		parse: ebaParse
 	},
+	'eba-credit': {
+		id: 'eba-credit',
+		name: 'EBA Credit',
+		country: 'EU',
+		accentColor: 'blue',
+		uploadFormats: ['json'],
+		columns: EBA_COLUMNS,
+		parse: withSourceLabel('eba-credit', ebaParse)
+	},
+	'eba-payment': {
+		id: 'eba-payment',
+		name: 'EBA Payment',
+		country: 'EU',
+		accentColor: 'purple',
+		uploadFormats: ['json'],
+		columns: EBA_COLUMNS,
+		parse: withSourceLabel('eba-payment', ebaParse)
+	},
 	regafi: {
 		id: 'regafi',
 		name: 'REGAFI',
@@ -107,6 +136,24 @@ const SOURCES: Partial<Record<SourceId, SourceDefinition>> = {
 		uploadFormats: ['json'],
 		columns: REGAFI_COLUMNS,
 		parse: regafiParse
+	},
+	'regafi-credit': {
+		id: 'regafi-credit',
+		name: 'REGAFI Credit',
+		country: 'FR',
+		accentColor: 'red',
+		uploadFormats: ['json'],
+		columns: REGAFI_COLUMNS,
+		parse: withSourceLabel('regafi-credit', regafiParse)
+	},
+	'regafi-payment': {
+		id: 'regafi-payment',
+		name: 'REGAFI Payment',
+		country: 'FR',
+		accentColor: 'purple',
+		uploadFormats: ['json'],
+		columns: REGAFI_COLUMNS,
+		parse: withSourceLabel('regafi-payment', regafiParse)
 	},
 	bafin: {
 		id: 'bafin',
@@ -117,6 +164,24 @@ const SOURCES: Partial<Record<SourceId, SourceDefinition>> = {
 		columns: BAFIN_COLUMNS,
 		parse: parseBafinEntities
 	},
+	'bafin-credit': {
+		id: 'bafin-credit',
+		name: 'BaFin Credit',
+		country: 'DE',
+		accentColor: 'green',
+		uploadFormats: ['csv'],
+		columns: BAFIN_COLUMNS,
+		parse: withSourceLabel('bafin-credit', parseBafinEntities)
+	},
+	'bafin-payment': {
+		id: 'bafin-payment',
+		name: 'BaFin Payment',
+		country: 'DE',
+		accentColor: 'purple',
+		uploadFormats: ['csv'],
+		columns: BAFIN_COLUMNS,
+		parse: withSourceLabel('bafin-payment', parseBafinEntities)
+	},
 	fma: {
 		id: 'fma',
 		name: 'FMA',
@@ -125,6 +190,24 @@ const SOURCES: Partial<Record<SourceId, SourceDefinition>> = {
 		uploadFormats: ['csv'],
 		columns: FMA_COLUMNS,
 		parse: parseFmaEntities
+	},
+	'fma-credit': {
+		id: 'fma-credit',
+		name: 'FMA Credit',
+		country: 'AT',
+		accentColor: 'amber',
+		uploadFormats: ['csv'],
+		columns: FMA_COLUMNS,
+		parse: withSourceLabel('fma-credit', parseFmaEntities)
+	},
+	'fma-payment': {
+		id: 'fma-payment',
+		name: 'FMA Payment',
+		country: 'AT',
+		accentColor: 'purple',
+		uploadFormats: ['csv'],
+		columns: FMA_COLUMNS,
+		parse: withSourceLabel('fma-payment', parseFmaEntities)
 	}
 };
 

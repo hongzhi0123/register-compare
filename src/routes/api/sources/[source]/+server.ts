@@ -20,7 +20,7 @@ export async function POST({ params, request }) {
 
 	try {
 		// EBA: stream-based parsing needs the raw ReadableStream
-		if (sourceId === 'eba' && request.body) {
+		if (sourceId.startsWith('eba') && request.body) {
 			console.info('[sources/eba] Starting stream parse...');
 			const entities = await source.parse({ type: 'json', stream: request.body });
 			console.info('[sources/eba] Parsed', entities.length, 'entities');

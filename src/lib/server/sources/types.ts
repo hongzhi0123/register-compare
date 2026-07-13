@@ -1,6 +1,11 @@
 import type { NormalizedEntity } from '$lib/types';
 
-export type SourceId = 'eba' | 'regafi' | 'bafin' | 'fma';
+export type SourceId =
+	| 'eba' | 'regafi' | 'bafin' | 'fma'
+	| 'eba-credit' | 'eba-payment'
+	| 'regafi-credit' | 'regafi-payment'
+	| 'bafin-credit' | 'bafin-payment'
+	| 'fma-credit' | 'fma-payment';
 
 export interface SourceColumnDef {
 	key: string;
