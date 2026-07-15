@@ -19,8 +19,8 @@ const EBA_COLUMNS: SourceColumnDef[] = [
 	{ key: 'rolesSummary', label: 'PSD2 Roles', sortable: false, filterType: 'select' },
 	{ key: 'rolesCountry', label: 'Role Country', sortable: false, filterType: 'select' },
 	{ key: 'idReferentiel', label: 'Reference ID', sortable: true, filterType: 'text-select' },
-	{ key: 'cib', label: 'CIB', sortable: true, filterType: 'text-select' },
-	{ key: 'lei', label: 'LEI', sortable: true, filterType: 'text-select' },
+		{ key: 'extra:entAut', label: 'Authorization', sortable: false, filterType: 'text-select' },
+		{ key: 'extra:entAutStatus', label: 'Auth Status', sortable: true, filterType: 'select' },
 	{ key: 'entityType', label: 'Entity Type', sortable: true, filterType: 'select' }
 ];
 

@@ -404,6 +404,43 @@ function buildPropsFromRaw(raw: Record<string, unknown>): { props: Record<string
 	return { props, propsRaw };
 }
 
+
+function formatEntAutDates(dates: unknown): { formatted: string; expired: boolean } {
+	if (!Array.isArray(dates) || dates.length === 0) {
+		return { formatted: '', expired: false };
+	}
+
+	const today = new Date();
+	today.setHours(0, 0, 0, 0);
+
+	const parts: string[] = [];
+	let hasActivePeriod = false;
+
+	// Process pairs: even indices (0,2,4...) = start, odd indices (1,3,5...) = expiry
+	for (let j = 0; j < dates.length; j += 2) {
+		const start = typeof dates[j] === 'string' ? dates[j].trim() : '';
+		const end = j + 1 < dates.length && typeof dates[j + 1] === 'string' ? dates[j + 1].trim() : null;
+
+		if (!start) continue;
+
+		if (end) {
+			parts.push(start + ' – ' + end);
+			const endDate = new Date(end);
+			endDate.setHours(0, 0, 0, 0);
+			if (endDate >= today) {
+				hasActivePeriod = true;
+			}
+		} else {
+			parts.push(start + ' – present');
+			hasActivePeriod = true;
+		}
+	}
+
+	return {
+		formatted: parts.join('; '),
+		expired: parts.length > 0 && !hasActivePeriod
+	};
+}
 function normalizeEbaEntity(raw: Record<string, unknown>): NormalizedEntity | null {
 	const companyId = raw['company_id'];
 	if (companyId && typeof companyId === 'string' && companyId.trim()) {
@@ -444,6 +481,15 @@ function normalizeEbaEntity(raw: Record<string, unknown>): NormalizedEntity | nu
 	if (!siren) return null;
 	const rolesByCountry = extractRolesByCountry(raw, props, propsRaw, country || 'FRANCE');
 
+
+		// Extract ENT_AUT authorization dates
+		const entAutRaw = propsRaw['ENT_AUT'];
+		const { formatted: entAutFormatted, expired: entAutExpired } = formatEntAutDates(entAutRaw);
+		const extra: Record<string, string | null> = {};
+		if (entAutFormatted) {
+			extra.entAut = entAutFormatted;
+			extra.entAutStatus = entAutExpired ? 'Expired' : 'Active';
+		}
 	return {
 		siren,
 		denomination: props['ENT_NAM'] || '',
@@ -454,7 +500,8 @@ function normalizeEbaEntity(raw: Record<string, unknown>): NormalizedEntity | nu
 		entityCode: raw.EntityCode ? String(raw.EntityCode) : undefined,
 		source: 'eba',
 		rolesByCountry,
-		rolesSummary: summarizeRoles(rolesByCountry)
+		rolesSummary: summarizeRoles(rolesByCountry),
+			extra: Object.keys(extra).length > 0 ? extra : undefined,
 	};
 }
 
