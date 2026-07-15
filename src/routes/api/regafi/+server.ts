@@ -41,6 +41,21 @@ function parseExcludeFilterMap(raw: string | null): Record<string, string[]> {
 	} catch { return {}; }
 }
 
+function parseAndFilterMap(raw: string | null): Record<string, string[]> {
+	if (!raw) return {};
+	try {
+		const parsed = JSON.parse(raw);
+		if (!parsed || typeof parsed !== 'object') return {};
+		const result: Record<string, string[]> = {};
+		for (const key of ALLOWED_FILTER_KEYS) {
+			const value = parsed[key];
+			if (typeof value === 'string') result[key] = value ? [value] : [];
+			if (Array.isArray(value)) result[key] = value.filter((item): item is string => typeof item === 'string');
+		}
+		return result;
+	} catch { return {}; }
+}
+
 export async function POST({ request }) {
 	const source = getSource(SOURCE_ID);
 	if (!source) return json({ success: false, error: 'Source non trouvée' }, { status: 500 });
@@ -71,6 +86,7 @@ export async function GET({ url }) {
 		const pageSize = Number(url.searchParams.get('pageSize') || '10');
 		const textFilters = parseTextFilterMap(url.searchParams.get('textFilters'));
 		const excludeFilters = parseExcludeFilterMap(url.searchParams.get('excludeFilters'));
+	const andFilters = parseAndFilterMap(url.searchParams.get('andFilters'));
 		const sortParam = url.searchParams.get('sortKey');
 		const sortDir = url.searchParams.get('sortDir') === 'desc' ? 'desc' as const : 'asc' as const;
 		const sortKey = sortParam && (ALLOWED_FILTER_KEYS.includes(sortParam) || sortParam === 'none')
@@ -80,7 +96,7 @@ export async function GET({ url }) {
 			const result = await getLatestDatasetPage(SOURCE_ID, {
 				page: Number.isFinite(page) && page > 0 ? page : 1,
 				pageSize: Number.isFinite(pageSize) && pageSize > 0 ? Math.min(pageSize, 100000) : 10,
-				textFilters, excludeFilters, sortKey, sortDir
+				textFilters, excludeFilters, andFilters, sortKey, sortDir
 			});
 			return json({ success: true, ...result });
 		}
@@ -91,7 +107,7 @@ export async function GET({ url }) {
 			const columnKeys = columnsParam
 				? columnsParam.split(',').filter((k) => ALLOWED_FILTER_KEYS.includes(k))
 				: [...ALLOWED_FILTER_KEYS];
-			const entities = await getFilteredEntities(SOURCE_ID, datasetId, textFilters, excludeFilters, sortKey, sortDir);
+			const entities = await getFilteredEntities(SOURCE_ID, datasetId, textFilters, excludeFilters, andFilters, sortKey, sortDir);
 			const csv = entitiesToCsv(entities, columnKeys, SOURCE_ID);
 			return new Response(csv, {
 				status: 200,
@@ -107,7 +123,7 @@ export async function GET({ url }) {
 		const result = await getDatasetPage(SOURCE_ID, datasetId, {
 			page: Number.isFinite(page) && page > 0 ? page : 1,
 			pageSize: Number.isFinite(pageSize) && pageSize > 0 ? Math.min(pageSize, 100000) : 10,
-			textFilters, excludeFilters, sortKey, sortDir
+			textFilters, excludeFilters, andFilters, sortKey, sortDir
 		});
 		return json({ success: true, datasetId, ...result });
 	} catch (error) {

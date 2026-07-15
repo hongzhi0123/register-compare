@@ -45,6 +45,7 @@
 	let sortDirs = $state<Record<Side, string>>({ left: 'asc', right: 'asc' });
 	let textFilters = $state<Record<Side, Record<string, string>>>({ left: {}, right: {} });
 	let excludeFilters = $state<Record<Side, Record<string, string[]>>>({ left: {}, right: {} });
+		let filterModes = $state<Record<Side, Record<string, 'or' | 'and'>>>({ left: {}, right: {} });
 	let filterOptions = $state<Record<Side, Record<string, Array<{ value: string; count: number }>>>>({ left: {}, right: {} });
 	let openFilters = $state<Record<Side, string | null>>({ left: null, right: null });
 	let loading = $state<Record<Side, boolean>>({ left: false, right: false });
@@ -312,7 +313,7 @@
 		loadingMessages[side] = 'Loading latest dataset...';
 		try {
 			const res = await fetch(
-				`/api/sources/${sourceId}?latest=1&page=1&pageSize=${PAGE_SIZE}&sortKey=${sortKeys[side]}&sortDir=${sortDirs[side]}&textFilters=${encodeURIComponent(JSON.stringify(textFilters[side]))}&excludeFilters=${encodeURIComponent(JSON.stringify(excludeFilters[side]))}`
+					`/api/sources/${sourceId}?latest=1&page=1&pageSize=${PAGE_SIZE}&sortKey=${sortKeys[side]}&sortDir=${sortDirs[side]}&textFilters=${encodeURIComponent(JSON.stringify(textFilters[side]))}&excludeFilters=${encodeURIComponent(JSON.stringify(excludeFilters[side]))}&andFilters=${encodeURIComponent(JSON.stringify(buildAndFilters(side)))}`
 			);
 			if (!res.ok) return;
 			const data = await res.json();
@@ -343,7 +344,8 @@
 				sortKey: sortKeys[side],
 				sortDir: sortDirs[side],
 				textFilters: JSON.stringify(textFilters[side]),
-				excludeFilters: JSON.stringify(excludeFilters[side])
+				excludeFilters: JSON.stringify(excludeFilters[side]),
+						andFilters: JSON.stringify(buildAndFilters(side)),
 			});
 
 			try {
@@ -487,8 +489,10 @@
 					rightSource: rightSrc,
 					leftTextFilters: textFilters.left,
 					leftExcludeFilters: excludeFilters.left,
+							leftAndFilters: buildAndFilters('left'),
 					rightTextFilters: textFilters.right,
 					rightExcludeFilters: excludeFilters.right,
+							rightAndFilters: buildAndFilters('right'),
 					options: {
 						columns: [
 							...(compareOnSiren ? ['siren' as const] : []),
@@ -676,7 +680,8 @@
 			sortKey: sortKeys[side],
 			sortDir: sortDirs[side],
 			textFilters: JSON.stringify(textFilters[side]),
-			excludeFilters: JSON.stringify(excludeFilters[side])
+			excludeFilters: JSON.stringify(excludeFilters[side]),
+				andFilters: JSON.stringify(buildAndFilters(side)),
 		});
 
 		const link = document.createElement('a');
@@ -829,6 +834,37 @@
         return !(excludeFilters[side][key] ?? []).includes(value);
 	}
 
+
+		function toggleFilterMode(side: Side, key: string) {
+			const current = filterModes[side][key] ?? 'or';
+			filterModes[side] = { ...filterModes[side], [key]: current === 'or' ? 'and' : 'or' };
+		}
+
+		function getFilterMode(side: Side, key: string): 'or' | 'and' {
+			return filterModes[side]?.[key] ?? 'or';
+		}
+
+		function setFilterMode(side: Side, key: string, mode: 'or' | 'and') {
+			filterModes[side] = { ...filterModes[side], [key]: mode };
+		}
+
+		function buildAndFilters(side: Side): Record<string, string[]> {
+			const result: Record<string, string[]> = {};
+			for (const [key, mode] of Object.entries(filterModes[side] ?? {})) {
+				if (mode === 'and') {
+					const opts = getExcludeOptions(side, key);
+					const excluded = new Set(excludeFilters[side][key] ?? []);
+					const required = opts
+						.filter(o => !['__all__', '__empty__', '__non_empty__'].includes(o.value) && !excluded.has(o.value))
+						.map(o => o.value);
+					const allRealValues = opts.filter(o => !['__all__', '__empty__', '__non_empty__'].includes(o.value)).map(o => o.value);
+					if (required.length > 0 && required.length < allRealValues.length) {
+						result[key] = required;
+					}
+				}
+			}
+			return result;
+		}
 	// --- Lifecycle ---
 	onMount(() => {
 		loadSources();
@@ -1106,6 +1142,19 @@
 																		</label>
 																	{/each}
 																</div>
+																																																																		{#if col.filterType === 'select'}
+																																																																			<div class="flex items-center justify-center gap-1 mb-1 mt-1">
+																																																																				<span class="text-xs text-gray-400">Match:</span>
+																																																																				<button
+																																																																					type="button"
+																																																																					class="rounded px-2 py-0.5 text-xs border transition {getFilterMode(s, col.key) !== 'and' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-100'}"
+																																																																					onclick={() => setFilterMode(s, col.key, 'or')}>Any</button>
+																																																																				<button
+																																																																					type="button"
+																																																																					class="rounded px-2 py-0.5 text-xs border transition {getFilterMode(s, col.key) === 'and' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-100'}"
+																																																																					onclick={() => setFilterMode(s, col.key, 'and')}>All</button>
+																																																																			</div>
+																																																																		{/if}
 																																<button
 																																	type="button"
 																																	class="mt-1 block w-full text-left px-1 py-0.5 text-xs text-gray-400 hover:text-gray-600"

@@ -1,4 +1,4 @@
-﻿import { randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { NormalizedEntity, SourceId, ErlaubnisDetail } from '$lib/types';
@@ -305,22 +305,40 @@ function getEntityValuesForKey(entity: NormalizedEntity, key: string): string[] 
 	return value ? [value] : [];
 }
 
-function matchesExcludeFilter(values: string[], exclude: string[]): boolean {
-	if (exclude.length === 0) return true;
-	const normalizedExclude = new Set(
-		exclude.map((v) => v.trim().toLowerCase())
+function matchesExcludeFilter(values: string[], filterValues: string[], mode: 'OR' | 'AND' = 'OR'): boolean {
+	if (filterValues.length === 0) return true;
+	const normalizedFilter = new Set(
+		filterValues.map((v) => v.trim().toLowerCase())
 	);
 	const normalizedValues = values.map((v) => v.trim().toLowerCase()).filter(Boolean);
+
+	if (mode === 'AND') {
+		// AND mode: filterValues are SELECTED (checked) values.
+		// Entity must contain ALL selected values.
+		if (normalizedValues.length === 0) {
+			// Empty entity: pass only if __empty__ is explicitly selected
+			return normalizedFilter.has('');
+		}
+		// Remove __empty__ from consideration for non-empty entities
+		const filterWithoutEmpty = new Set(normalizedFilter);
+		filterWithoutEmpty.delete('');
+		if (filterWithoutEmpty.size === 0) return true; // only empty was selected
+		// Entity must have ALL selected values
+		const valueSet = new Set(normalizedValues);
+		return [...filterWithoutEmpty].every((v) => valueSet.has(v));
+	}
+
+	// OR mode (original exclude logic): filterValues are EXCLUDED (unchecked) values
 	if (normalizedValues.length === 0) {
 		// Hide empty values when any exclude filter is active,
 		// unless user explicitly checked the __empty__ toggle
 		// (which removes '' from the exclude list).
-		return !normalizedExclude.has('');
+		return !normalizedFilter.has('');
 	}
 	// Show if at least one value is NOT excluded (OR logic for multi-value fields)
 	// __non_empty__ sentinel: when present in exclude, hide all non-empty values
-	if (normalizedExclude.has('__non_empty__')) return false;
-	return !normalizedValues.every((v) => normalizedExclude.has(v));
+	if (normalizedFilter.has('__non_empty__')) return false;
+	return !normalizedValues.every((v) => normalizedFilter.has(v));
 }
 export async function getLatestDatasetId(kind: DatasetKind): Promise<string | null> {
 	try {
@@ -373,6 +391,7 @@ export async function getDatasetPage(
 		pageSize: number;
 		textFilters: Record<string, string>;
 		excludeFilters: Record<string, string[]>;
+		andFilters?: Record<string, string[]>;
 		sortKey: DatasetSortKey;
 		sortDir: DatasetSortDirection;
 		progressRequestId?: string | null;
@@ -446,6 +465,20 @@ export async function getDatasetPage(
 			return matchesExcludeFilter(values, selectedValues);
 		});
 	}
+
+		// AND-mode filters: entity must have ALL selected values
+		for (const [rawKey, rawValue] of Object.entries(params.andFilters ?? {})) {
+			if (rawKey === 'rolesCountry' || rawKey === 'rolesName' || rawKey === 'rolesSummary') continue;
+			if (!allowedKeys.has(rawKey)) continue;
+			const selectedValues = rawValue || [];
+			if (selectedValues.length === 0) continue;
+			hasActiveFilters = true;
+
+			filtered = filtered.filter((entity) => {
+				const values = getEntityValuesForKey(entity, rawKey);
+				return matchesExcludeFilter(values, selectedValues, 'AND');
+			});
+		}
 	progress?.running(76, 'Préparation des options de filtre...');
 	let filterOptions: FilterOptionsMap;
 	const selectOnlyKeys = new Set(getColumnsForSource(kind).filter((c) => c.filterType === 'select' || c.filterType === 'text-select').map((c) => c.key));
@@ -498,6 +531,7 @@ export async function getLatestDatasetPage(
 		pageSize: number;
 		textFilters: Record<string, string>;
 		excludeFilters: Record<string, string[]>;
+			andFilters?: Record<string, string[]>;
 		sortKey: DatasetSortKey;
 		sortDir: DatasetSortDirection;
 		progressRequestId?: string | null;
@@ -538,6 +572,7 @@ export async function getFilteredEntities(
 	datasetId: string,
 	textFilters: Record<string, string>,
 	excludeFilters: Record<string, string[]>,
+		andFilters: Record<string, string[]>,
 	sortKey: DatasetSortKey,
 	sortDir: DatasetSortDirection
 ): Promise<NormalizedEntity[]> {
@@ -596,6 +631,20 @@ export async function getFilteredEntities(
 		});
 	}
 
+
+		// AND-mode filters: entity must have ALL selected values
+		for (const [rawKey, rawValue] of Object.entries(andFilters ?? {})) {
+			if (rawKey === 'rolesCountry' || rawKey === 'rolesName' || rawKey === 'rolesSummary') continue;
+			if (!allowedKeys.has(rawKey)) continue;
+			const selectedValues = rawValue || [];
+			if (selectedValues.length === 0) continue;
+			hasFilters = true;
+
+			filtered = filtered.filter((entity) => {
+				const values = getEntityValuesForKey(entity, rawKey);
+				return matchesExcludeFilter(values, selectedValues, 'AND');
+			});
+		}
 	const isDefaultSort = sortKey === 'siren' && sortDir === 'asc';
 	if (sortKey !== 'none' && !(isDefaultSort && !hasFilters && Object.keys(stored.filterOptions).length > 0)) {
 		filtered = [...filtered].sort((a, b) => {

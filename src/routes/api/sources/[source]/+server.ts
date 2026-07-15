@@ -79,6 +79,7 @@ export async function GET({ params, url }) {
 		const pageSize = Number(url.searchParams.get('pageSize') || '10');
 		const textFilters = parseTextFilterMap(url.searchParams.get('textFilters'), allowedKeys);
 		const excludeFilters = parseExcludeFilterMap(url.searchParams.get('excludeFilters'), allowedKeys);
+		const andFilters = parseAndFilterMap(url.searchParams.get('andFilters'), allowedKeys);
 		const sortParam = url.searchParams.get('sortKey');
 		const sortDir = url.searchParams.get('sortDir') === 'desc' ? 'desc' as const : 'asc' as const;
 		const sortKey = sortParam && (allowedKeys.includes(sortParam) || sortParam === 'none')
@@ -99,6 +100,7 @@ export async function GET({ params, url }) {
 				pageSize: Number.isFinite(pageSize) && pageSize > 0 ? Math.min(pageSize, 100000) : 10,
 				textFilters,
 				excludeFilters,
+						andFilters,
 				sortKey,
 				sortDir,
 				progressRequestId
@@ -116,7 +118,7 @@ export async function GET({ params, url }) {
 				? columnsParam.split(',').filter((k) => allowedKeys.includes(k))
 				: allowedKeys;
 			const entities = await getFilteredEntities(
-				sourceId as SourceId, datasetId, textFilters, excludeFilters, sortKey, sortDir
+				sourceId as SourceId, datasetId, textFilters, excludeFilters, andFilters, sortKey, sortDir
 			);
 			const csv = entitiesToCsv(entities, columnKeys, sourceId as SourceId);
 			return new Response(csv, {
@@ -137,6 +139,7 @@ export async function GET({ params, url }) {
 			pageSize: Number.isFinite(pageSize) && pageSize > 0 ? Math.min(pageSize, 100000) : 10,
 			textFilters,
 			excludeFilters,
+						andFilters,
 			sortKey,
 			sortDir,
 			progressRequestId
@@ -170,6 +173,29 @@ function parseTextFilterMap(raw: string | null, allowedKeys: string[]): Record<s
 }
 
 function parseExcludeFilterMap(raw: string | null, allowedKeys: string[]): Record<string, string[]> {
+	if (!raw) return {};
+
+	try {
+		const parsed = JSON.parse(raw);
+		if (!parsed || typeof parsed !== 'object') return {};
+
+		const result: Record<string, string[]> = {};
+		for (const key of allowedKeys) {
+			const value = parsed[key];
+			if (typeof value === 'string') {
+				result[key] = value ? [value] : [];
+			}
+			if (Array.isArray(value)) {
+				result[key] = value.filter((item): item is string => typeof item === 'string');
+			}
+		}
+		return result;
+	} catch {
+		return {};
+	}
+}
+
+function parseAndFilterMap(raw: string | null, allowedKeys: string[]): Record<string, string[]> {
 	if (!raw) return {};
 
 	try {

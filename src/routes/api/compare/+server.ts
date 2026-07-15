@@ -13,8 +13,10 @@ export async function POST({ request }) {
 			rightSource = 'eba',
 			leftTextFilters = {},
 			leftExcludeFilters = {},
+				leftAndFilters = {},
 			rightTextFilters = {},
 			rightExcludeFilters = {},
+				rightAndFilters = {},
 			options = {} as Partial<ComparisonOptions>,
 			left: leftInput,
 			right: rightInput
@@ -30,6 +32,7 @@ export async function POST({ request }) {
 					leftDatasetId,
 					leftTextFilters as Record<string, string>,
 					leftExcludeFilters as Record<string, string[]>,
+					leftAndFilters as Record<string, string[]>,
 					'none',
 					'asc'
 				),
@@ -38,6 +41,7 @@ export async function POST({ request }) {
 					rightDatasetId,
 					rightTextFilters as Record<string, string>,
 					rightExcludeFilters as Record<string, string[]>,
+					rightAndFilters as Record<string, string[]>,
 					'none',
 					'asc'
 				)
