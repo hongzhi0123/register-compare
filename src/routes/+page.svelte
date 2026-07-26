@@ -46,6 +46,7 @@
 	let textFilters = $state<Record<Side, Record<string, string>>>({ left: {}, right: {} });
 	let excludeFilters = $state<Record<Side, Record<string, string[]>>>({ left: {}, right: {} });
 		let filterModes = $state<Record<Side, Record<string, 'or' | 'and'>>>({ left: {}, right: {} });
+	let duplicatesOnly = $state<Record<Side, boolean>>({ left: false, right: false });
 	let filterOptions = $state<Record<Side, Record<string, Array<{ value: string; count: number }>>>>({ left: {}, right: {} });
 	let openFilters = $state<Record<Side, string | null>>({ left: null, right: null });
 	let loading = $state<Record<Side, boolean>>({ left: false, right: false });
@@ -228,6 +229,17 @@
 				if (!required.every((v) => val.includes(v))) return false;
 			}
 
+			// Duplicates only — entity must have a SIREN that appears more than once
+			if (duplicatesOnly[side]) {
+				const sirenCounts = new Map<string, number>();
+				for (const e of entities) {
+					const s = (e.siren || '').trim();
+					if (s) sirenCounts.set(s, (sirenCounts.get(s) ?? 0) + 1);
+				}
+				const entitySiren = (entity.siren || '').trim();
+				if (!entitySiren || (sirenCounts.get(entitySiren) ?? 0) <= 1) return false;
+			}
+
 			return true;
 		});
 	}
@@ -363,7 +375,7 @@
 		loadingMessages[side] = 'Loading latest dataset...';
 		try {
 			const res = await fetch(
-					`/api/sources/${sourceId}?latest=1&page=1&pageSize=${PAGE_SIZE}&sortKey=${sortKeys[side]}&sortDir=${sortDirs[side]}&textFilters=${encodeURIComponent(JSON.stringify(textFilters[side]))}&excludeFilters=${encodeURIComponent(JSON.stringify(excludeFilters[side]))}&andFilters=${encodeURIComponent(JSON.stringify(buildAndFilters(side)))}`
+					`/api/sources/${sourceId}?latest=1&page=1&pageSize=${PAGE_SIZE}&sortKey=${sortKeys[side]}&sortDir=${sortDirs[side]}&textFilters=${encodeURIComponent(JSON.stringify(textFilters[side]))}&excludeFilters=${encodeURIComponent(JSON.stringify(excludeFilters[side]))}&andFilters=${encodeURIComponent(JSON.stringify(buildAndFilters(side)))}&duplicatesOnly=${duplicatesOnly[side] ? '1' : '0'}`
 			);
 			if (!res.ok) return;
 			const data = await res.json();
@@ -397,6 +409,7 @@
 				excludeFilters: JSON.stringify(excludeFilters[side]),
 						andFilters: JSON.stringify(buildAndFilters(side)),
 			});
+			if (duplicatesOnly[side]) params.set('duplicatesOnly', '1');
 
 			try {
 				const res = await fetch(`/api/sources/${sourceId}?${params}`);
@@ -1273,6 +1286,20 @@
 																																	Reset
 																																</button>
 															{/if}
+															{#if col.key === 'siren'}
+																<div class="mt-2 border-t border-gray-200 pt-2">
+																	<label class="flex items-center gap-2 py-0.5 text-xs hover:bg-gray-50 px-1 rounded cursor-pointer">
+																		<input
+																			type="checkbox"
+																			checked={duplicatesOnly[s]}
+																			onchange={() => { duplicatesOnly[s] = !duplicatesOnly[s]; applyFilters(s); }}
+																			class="rounded"
+																		/>
+																		<span class="text-amber-700 font-medium">Duplicates only</span>
+																	</label>
+																</div>
+															{/if}
+
 															{#if col.key === 'rolesSummary'}
 																<div class="mt-2 border-t border-gray-200 pt-2">
 																	<div class="mb-1 text-xs font-medium text-gray-500">Limit to country</div>

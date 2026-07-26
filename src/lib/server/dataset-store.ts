@@ -392,6 +392,7 @@ export async function getDatasetPage(
 		textFilters: Record<string, string>;
 		excludeFilters: Record<string, string[]>;
 		andFilters?: Record<string, string[]>;
+		duplicatesOnly?: boolean;
 		sortKey: DatasetSortKey;
 		sortDir: DatasetSortDirection;
 		progressRequestId?: string | null;
@@ -479,6 +480,20 @@ export async function getDatasetPage(
 				return matchesExcludeFilter(values, selectedValues, 'AND');
 			});
 		}
+		// Duplicates only filter
+	if (params.duplicatesOnly) {
+		const sirenCounts = new Map<string, number>();
+		for (const e of filtered) {
+			const s = (e.siren || '').trim();
+			if (s) sirenCounts.set(s, (sirenCounts.get(s) ?? 0) + 1);
+		}
+		hasActiveFilters = true;
+		filtered = filtered.filter((entity) => {
+			const siren = (entity.siren || '').trim();
+			return siren && (sirenCounts.get(siren) ?? 0) > 1;
+		});
+	}
+
 	progress?.running(76, 'Préparation des options de filtre...');
 	let filterOptions: FilterOptionsMap;
 	const selectOnlyKeys = new Set(getColumnsForSource(kind).filter((c) => c.filterType === 'select' || c.filterType === 'text-select').map((c) => c.key));
@@ -532,6 +547,7 @@ export async function getLatestDatasetPage(
 		textFilters: Record<string, string>;
 		excludeFilters: Record<string, string[]>;
 			andFilters?: Record<string, string[]>;
+		duplicatesOnly?: boolean;
 		sortKey: DatasetSortKey;
 		sortDir: DatasetSortDirection;
 		progressRequestId?: string | null;
@@ -574,7 +590,8 @@ export async function getFilteredEntities(
 	excludeFilters: Record<string, string[]>,
 		andFilters: Record<string, string[]>,
 	sortKey: DatasetSortKey,
-	sortDir: DatasetSortDirection
+	sortDir: DatasetSortDirection,
+	duplicatesOnly?: boolean
 ): Promise<NormalizedEntity[]> {
 	const stored = await readDataset(kind, datasetId);
 	const allowedKeys = getColumnKeySet(kind);
@@ -645,6 +662,21 @@ export async function getFilteredEntities(
 				return matchesExcludeFilter(values, selectedValues, 'AND');
 			});
 		}
+
+	// Duplicates only filter
+	if (duplicatesOnly) {
+		const sirenCounts = new Map<string, number>();
+		for (const e of filtered) {
+			const s = (e.siren || '').trim();
+			if (s) sirenCounts.set(s, (sirenCounts.get(s) ?? 0) + 1);
+		}
+		hasFilters = true;
+		filtered = filtered.filter((entity) => {
+			const siren = (entity.siren || '').trim();
+			return siren && (sirenCounts.get(siren) ?? 0) > 1;
+		});
+	}
+
 	const isDefaultSort = sortKey === 'siren' && sortDir === 'asc';
 	if (sortKey !== 'none' && !(isDefaultSort && !hasFilters && Object.keys(stored.filterOptions).length > 0)) {
 		filtered = [...filtered].sort((a, b) => {

@@ -80,6 +80,7 @@ export async function GET({ params, url }) {
 		const textFilters = parseTextFilterMap(url.searchParams.get('textFilters'), allowedKeys);
 		const excludeFilters = parseExcludeFilterMap(url.searchParams.get('excludeFilters'), allowedKeys);
 		const andFilters = parseAndFilterMap(url.searchParams.get('andFilters'), allowedKeys);
+		const duplicatesOnly = url.searchParams.get('duplicatesOnly') === '1';
 		const sortParam = url.searchParams.get('sortKey');
 		const sortDir = url.searchParams.get('sortDir') === 'desc' ? 'desc' as const : 'asc' as const;
 		const sortKey = sortParam && (allowedKeys.includes(sortParam) || sortParam === 'none')
@@ -103,6 +104,7 @@ export async function GET({ params, url }) {
 						andFilters,
 				sortKey,
 				sortDir,
+				duplicatesOnly,
 				progressRequestId
 			});
 
@@ -118,7 +120,7 @@ export async function GET({ params, url }) {
 				? columnsParam.split(',').filter((k) => allowedKeys.includes(k))
 				: allowedKeys;
 			const entities = await getFilteredEntities(
-				sourceId as SourceId, datasetId, textFilters, excludeFilters, andFilters, sortKey, sortDir
+				sourceId as SourceId, datasetId, textFilters, excludeFilters, andFilters, sortKey, sortDir, duplicatesOnly
 			);
 			const csv = entitiesToCsv(entities, columnKeys, sourceId as SourceId);
 			return new Response(csv, {
@@ -142,6 +144,7 @@ export async function GET({ params, url }) {
 						andFilters,
 			sortKey,
 			sortDir,
+			duplicatesOnly,
 			progressRequestId
 		});
 
