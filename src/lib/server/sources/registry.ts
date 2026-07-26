@@ -18,10 +18,11 @@ const EBA_COLUMNS: SourceColumnDef[] = [
 	{ key: 'categorie', label: 'Category', sortable: true, filterType: 'select' },
 	{ key: 'rolesSummary', label: 'PSD2 Roles', sortable: false, filterType: 'select' },
 	{ key: 'rolesCountry', label: 'Role Country', sortable: false, filterType: 'select' },
-	{ key: 'idReferentiel', label: 'Reference ID', sortable: true, filterType: 'text-select' },
+	{ key: 'entityCode', label: 'Entity Code', sortable: true, filterType: 'text-select' },
 		{ key: 'extra:entAut', label: 'Authorization', sortable: false, filterType: 'text-select' },
 		{ key: 'extra:entAutStatus', label: 'Auth Status', sortable: true, filterType: 'select' },
-	{ key: 'entityType', label: 'Entity Type', sortable: true, filterType: 'select' }
+	{ key: 'extra:comAut', label: 'Authority', sortable: true, filterType: 'select' },
+	{ key: 'extra:ebaVersion', label: 'Version', sortable: false, filterType: 'text-select' }
 ];
 
 const REGAFI_COLUMNS: SourceColumnDef[] = [

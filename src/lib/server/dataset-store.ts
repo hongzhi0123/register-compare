@@ -184,7 +184,12 @@ function ensureFilterOptionsUpgraded(kind: DatasetKind, stored: StoredDataset): 
 	const selectKeys = columns.filter((c) => c.filterType === 'select').map((c) => c.key);
 	for (const key of selectKeys) {
 		const options = stored.filterOptions[key];
-		if (!options || options.length === 0) continue;
+		// Build missing or empty filter options from the stored entities
+		if (!options || options.length === 0) {
+			stored.filterOptions[key] = buildFilterOptionsWithCounts(stored.entities, [key])[key] ?? [];
+			continue;
+		}
+		// Upgrade old string-format options to { value, count } format
 		if (typeof (options[0] as unknown) === 'string') {
 			stored.filterOptions[key] = buildFilterOptionsWithCounts(stored.entities, [key])[key] ?? [];
 		}

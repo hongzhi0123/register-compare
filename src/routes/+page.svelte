@@ -865,6 +865,10 @@
 						}
 					}
 				}
+			} else if (key.startsWith('extra:')) {
+				const val = entity.extra?.[key.slice(6)] ?? '';
+				if (val) freq.set(val, (freq.get(val) ?? 0) + 1);
+				else freq.set('', (freq.get('') ?? 0) + 1);
 			} else {
 				const raw = (entity as unknown as Record<string, unknown>)[key];
 				const val = raw === null || raw === undefined || raw === '' ? '' : String(raw);

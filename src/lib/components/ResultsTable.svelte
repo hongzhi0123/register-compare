@@ -296,7 +296,7 @@
 									{#if match.left}
 										<div class="bg-blue-50 p-2 rounded">
 											<p class="font-medium text-blue-700 mb-1">{leftLabel}</p>
-											<p>ID: {match.left.idReferentiel || '-'}</p>
+											<p>ID: {match.left.entityCode || match.left.idReferentiel || '-'}</p>
 											{#if match.left.cib}
 												<p>CIB: {match.left.cib}</p>
 											{/if}

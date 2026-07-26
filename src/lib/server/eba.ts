@@ -482,13 +482,23 @@ function normalizeEbaEntity(raw: Record<string, unknown>): NormalizedEntity | nu
 	const rolesByCountry = extractRolesByCountry(raw, props, propsRaw, country || 'FRANCE');
 
 
-		// Extract ENT_AUT authorization dates
+		// Extract authorization dates from ENT_AUT
 		const entAutRaw = propsRaw['ENT_AUT'];
 		const { formatted: entAutFormatted, expired: entAutExpired } = formatEntAutDates(entAutRaw);
+		// COM_AUT is a plain string indicating the competent authority (NCA)
+		const comAutRaw = propsRaw['COM_AUT'];
+		const comAut = typeof comAutRaw === 'string' ? comAutRaw.trim() : null;
+		const ebaVersion = raw.__EBA_EntityVersion != null ? String(raw.__EBA_EntityVersion) : null;
 		const extra: Record<string, string | null> = {};
 		if (entAutFormatted) {
 			extra.entAut = entAutFormatted;
 			extra.entAutStatus = entAutExpired ? 'Expired' : 'Active';
+		}
+		if (comAut) {
+			extra.comAut = comAut;
+		}
+		if (ebaVersion) {
+			extra.ebaVersion = ebaVersion;
 		}
 	return {
 		siren,
