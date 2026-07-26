@@ -1,7 +1,7 @@
 ﻿<script lang="ts">
 	import { onMount } from 'svelte';
 	import SourceUpload from '$lib/components/SourceUpload.svelte';
-	import type { ComparisonMatch, ComparisonOptions, ComparisonResult, NormalizedEntity, SourceId } from '$lib/types';
+	import type { ComparisonMatch, ComparisonOptions, ComparisonResult, CountryRoleDetail, CountryRoles, NormalizedEntity, SourceId } from '$lib/types';
 
 	type Side = 'left' | 'right';
 	type FilterType = 'none' | 'text' | 'select' | 'text-select';
@@ -153,7 +153,7 @@
 	}
 
 	function getCount(side: Side): number {
-		return compareModeActive ? getFilteredComparison(side).length : counts[side];
+		return compareModeActive ? applyClientFilters(side, getFilteredComparison(side)).length : counts[side];
 	}
 
 
@@ -183,11 +183,61 @@
 		};
 	}
 
+	function getEntityFilterValue(entity: NormalizedEntity, key: string): string {
+		if (key === 'rolesSummary') return deriveRolesSummary(entity);
+		if (key === 'erlaubnisseDetails') {
+			const details = entity.erlaubnisseDetails;
+			if (!details || details.length === 0) return '';
+			return formatErlaubnisLine(details[0]);
+		}
+		if (key.startsWith('extra:')) {
+			return entity.extra?.[key.slice(6)] ?? '';
+		}
+		const raw = (entity as unknown as Record<string, unknown>)[key];
+		return raw === null || raw === undefined || raw === '' ? '' : String(raw);
+	}
+
+	function applyClientFilters(side: Side, entities: NormalizedEntity[]): NormalizedEntity[] {
+		const tf = textFilters[side];
+		const ef = excludeFilters[side];
+		const af = buildAndFilters(side);
+
+		return entities.filter((entity) => {
+			// Text filters — entity must match ALL non-empty text filters
+			for (const [key, searchText] of Object.entries(tf)) {
+				if (!searchText.trim()) continue;
+				const val = getEntityFilterValue(entity, key).toLowerCase();
+				if (!val.includes(searchText.toLowerCase())) return false;
+			}
+
+			// Exclude filters — entity is excluded if its value matches any excluded value
+			for (const [key, excluded] of Object.entries(ef)) {
+				if (excluded.length === 0) continue;
+				const val = getEntityFilterValue(entity, key);
+				if (excluded.includes('') && val === '') return false;
+				if (excluded.includes('__non_empty__') && val !== '') return false;
+				for (const v of excluded) {
+					if (v !== '' && v !== '__non_empty__' && v === val) return false;
+				}
+			}
+
+			// AND filters — entity must have ALL required values for each column
+			for (const [key, required] of Object.entries(af)) {
+				if (required.length === 0) continue;
+				const val = getEntityFilterValue(entity, key);
+				if (!required.every((v) => val.includes(v))) return false;
+			}
+
+			return true;
+		});
+	}
+
 	function getDisplayItems(side: Side): NormalizedEntity[] {
 		const p = pages[side];
-		const items = compareModeActive ? getFilteredComparison(side) : pageItems[side];
+		let items = compareModeActive ? getFilteredComparison(side) : pageItems[side];
 		if (compareModeActive) {
-			// Client-side sort for comparison mode
+			// Apply client-side filters then sort for comparison mode
+			items = applyClientFilters(side, items);
 			const key = sortKeys[side];
 			const dir = sortDirs[side];
 			const sorted = [...items].sort((a, b) => {
@@ -397,8 +447,7 @@
 	function applyFilters(side: Side) {
 		openFilters[side] = null;
 		pages[side] = 1;
-		if (compareModeActive) return;
-		fetchPage(side);
+		if (!compareModeActive) fetchPage(side);
 	}
 
 	// --- Column visibility ---
@@ -760,6 +809,62 @@
 		return false;
 	}
 
+	function isStructuredRoleEntry(entry: CountryRoles): entry is CountryRoleDetail {
+		return 'countryCode' in entry && 'countryName' in entry && Array.isArray((entry as CountryRoleDetail).roles);
+	}
+
+	function computeCompareFilterOptions(side: Side, key: string): Array<{ value: string; count: number }> {
+		const entities = getFilteredComparison(side);
+		const freq = new Map<string, number>();
+
+		for (const entity of entities) {
+			if (key === 'rolesCountry') {
+				const seen = new Set<string>();
+				for (const entry of (entity.rolesByCountry ?? [])) {
+					if (isStructuredRoleEntry(entry)) {
+						const name = entry.countryName || entry.countryCode;
+						if (name && !seen.has(name)) {
+							seen.add(name);
+							freq.set(name, (freq.get(name) ?? 0) + 1);
+						}
+					} else {
+						for (const country of Object.keys(entry)) {
+							if (country && !seen.has(country)) {
+								seen.add(country);
+								freq.set(country, (freq.get(country) ?? 0) + 1);
+							}
+						}
+					}
+				}
+			} else if (key === 'rolesName') {
+				const seen = new Set<string>();
+				for (const entry of (entity.rolesByCountry ?? [])) {
+					let roleList: string[];
+					if (isStructuredRoleEntry(entry)) {
+						roleList = entry.roles;
+					} else {
+						roleList = Object.values(entry).flatMap((v) => (Array.isArray(v) ? v : []));
+					}
+					for (const role of roleList) {
+						if (role && !seen.has(role)) {
+							seen.add(role);
+							freq.set(role, (freq.get(role) ?? 0) + 1);
+						}
+					}
+				}
+			} else {
+				const raw = (entity as unknown as Record<string, unknown>)[key];
+				const val = raw === null || raw === undefined || raw === '' ? '' : String(raw);
+				freq.set(val, (freq.get(val) ?? 0) + 1);
+			}
+		}
+
+		return Array.from(freq.entries())
+			.filter(([val]) => val !== '')
+			.map(([value, count]) => ({ value, count }))
+			.sort((a, b) => a.value.localeCompare(b.value, 'fr'));
+	}
+
 	function getExcludeOptions(side: Side, key: string): SelectOption[] {
 		const col = sources[side]?.columns.find((c) => c.key === key);
 		const isTextSelect = col?.filterType === 'text-select';
@@ -773,12 +878,17 @@
 			];
 		}
 
-		const dynamic = (filterOptions[side][key] ?? []).map((v) => {
+		const rawOptions = compareModeActive
+			? computeCompareFilterOptions(side, key)
+			: (filterOptions[side][key] ?? []);
+
+		const dynamic = rawOptions.map((v) => {
 			if (typeof v === 'string') return { value: v, label: v };
 			return { value: v.value, label: v.value, count: v.count };
 		});
+		const totalCount = compareModeActive ? getFilteredComparison(side).length : counts[side];
 		const nonEmptyCount = dynamic.reduce((sum, o) => sum + (o.count ?? 0), 0);
-		const hasEmpty = nonEmptyCount < counts[side];
+		const hasEmpty = nonEmptyCount < totalCount;
 		const options: SelectOption[] = [{ value: '__all__', label: 'All' }];
 		if (hasEmpty) options.push({ value: '__empty__', label: 'Empty' });
 		options.push(...dynamic);
