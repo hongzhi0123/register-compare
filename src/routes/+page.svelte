@@ -340,7 +340,11 @@
 			const saved = localStorage.getItem(`columns-${sourceId}`);
 			if (saved) {
 				try {
-					const savedSet = new Set(JSON.parse(saved));
+					const parsed = JSON.parse(saved);
+					const savedKeys = Array.isArray(parsed)
+						? parsed.filter((item): item is string => typeof item === 'string')
+						: [];
+					const savedSet = new Set<string>(savedKeys);
 					for (const key of defaults) savedSet.add(key);
 					visibleColumns[side] = savedSet;
 				} catch { visibleColumns[side] = defaults; }

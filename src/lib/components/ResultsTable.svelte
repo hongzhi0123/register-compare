@@ -16,7 +16,7 @@
 	function getSortValue(match: ComparisonMatch, key: string): string {
 		switch (key) {
 			case 'status':
-				return statusLabels[match.status] ?? match.status;
+				return getStatusLabel(match.status);
 			case 'siren':
 				return match.siren;
 			case 'denomination':
@@ -63,14 +63,24 @@
 		})
 	);
 
-	const statusLabels: Record<string, string> = {
-		match: 'Match',
-		nameMismatch: 'Name mismatch',
-		cityMismatch: 'City mismatch',
-		categoryMismatch: 'Category mismatch',
-		onlyInLeft: `Uniquement ${leftLabel}`,
-		onlyInRight: `Uniquement ${rightLabel}`
-	};
+	function getStatusLabel(status: ComparisonMatch['status']): string {
+		switch (status) {
+			case 'match':
+				return 'Match';
+			case 'nameMismatch':
+				return 'Name mismatch';
+			case 'cityMismatch':
+				return 'City mismatch';
+			case 'categoryMismatch':
+				return 'Category mismatch';
+			case 'onlyInLeft':
+				return `Uniquement ${leftLabel}`;
+			case 'onlyInRight':
+				return `Uniquement ${rightLabel}`;
+			default:
+				return status;
+		}
+	}
 
 	const statusColors: Record<string, string> = {
 		match: 'bg-green-100 text-green-800',
@@ -97,7 +107,7 @@
 			const differences = match.differences.join(' | ');
 
 			return [
-				escapeCsv(statusLabels[match.status] || match.status),
+				escapeCsv(getStatusLabel(match.status)),
 				escapeCsv(match.siren),
 				escapeCsv(denomination),
 				escapeCsv(categorie),
@@ -246,7 +256,7 @@
 					<tr class="hover:bg-gray-50 cursor-pointer" onclick={() => toggleExpand(match.siren)}>
 						<td class="px-4 py-3 truncate">
 							<span class="inline-flex px-2 py-0.5 text-xs font-medium rounded-full {statusColors[match.status]}">
-								{statusLabels[match.status]}
+								{getStatusLabel(match.status)}
 							</span>
 						</td>
 						<td class="px-4 py-3 truncate font-mono text-xs">{match.siren}</td>
