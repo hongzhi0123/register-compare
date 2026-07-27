@@ -1,0 +1,704 @@
+[
+  {
+    "id_referentiel": "59947",
+    "cib": "[]",
+    "lei": null,
+    "indicateur_psi": "False",
+    "type_entite": "Personne morale",
+    "denomination": "LA PLAINE INFORMATIQUE",
+    "nom_commerciaux": null,
+    "sigle": null,
+    "siren": "521904227",
+    "forme_juridique": "Société à responsabilité limitée",
+    "id_entite_parente": null,
+    "modalite_exercice": null,
+    "adresse": "67 rue du Landy",
+    "code_postal": "93210",
+    "ville": "ST DENIS",
+    "pays": "FRANCE",
+    "categorie": "Agent PSP",
+    "evenements": null,
+    "approval_withdrawal_process": "False",
+    "authorisations": {
+      "MANDAT_FROM_13019": {
+        "id_referentiel": "59947",
+        "categorie": "Agent PSP",
+        "services_auxiliaires_json": "",
+        "monnaies_electroniques_json": "",
+        "cautions_reglementees_json": "",
+        "id_autorisation": "MANDAT_FROM_13019",
+        "agrement_simple_json": "",
+        "date_debut": "2018-11-09",
+        "exemptions_api_json": "",
+        "secours_api_json": "",
+        "approbation_json": "",
+        "emissions_cryptos_json": "",
+        "habilitations_json": "",
+        "services_investissement_json": "",
+        "directives_bancaires_json": "",
+        "pays_exercice": "FRANCE",
+        "autorisation_simple_json": "",
+        "inscription_liste_json": "",
+        "gestions_credits_json": "",
+        "services_paiement_json": {
+          "1": {
+            "date_debut": null,
+            "value": false
+          },
+          "2": {
+            "date_debut": null,
+            "value": false
+          },
+          "3": {
+            "date_debut": null,
+            "value": false,
+            "subkeys": {
+              "3C": {
+                "date_debut": null,
+                "value": false
+              },
+              "3A": {
+                "date_debut": null,
+                "value": false
+              },
+              "3B": {
+                "date_debut": null,
+                "value": false
+              }
+            }
+          },
+          "4": {
+            "date_debut": null,
+            "value": false,
+            "subkeys": {
+              "4A": {
+                "date_debut": null,
+                "value": false
+              },
+              "4B": {
+                "date_debut": null,
+                "value": false
+              },
+              "4C": {
+                "date_debut": null,
+                "value": false
+              }
+            }
+          },
+          "5": {
+            "date_debut": null,
+            "value": false
+          },
+          "6": {
+            "date_debut": "2018-11-09",
+            "value": true
+          },
+          "7": {
+            "date_debut": null,
+            "value": false
+          },
+          "8": {
+            "date_debut": null,
+            "value": false
+          },
+          "5.": {
+            "date_debut": null,
+            "value": false
+          }
+        },
+        "situation": "MANDAT"
+      }
+    },
+    "mandants": {
+      "13019": {
+        "type_mandatee": "Personne morale",
+        "cautions_reglementees_json": "",
+        "agrement_simple_json": "",
+        "mandat_label": "Agent PSP",
+        "date_debut": "2018-11-09",
+        "exemptions_api_json": "",
+        "emissions_cryptos_json": "",
+        "habilitations_json": "",
+        "code_postal_mandataire": "",
+        "pays_mandataire": "",
+        "id_mandatee": "59947",
+        "services_auxiliaires_json": "",
+        "monnaies_electroniques_json": "",
+        "ville_mandataire": "",
+        "id_mandator": "13019",
+        "secours_api_json": "",
+        "approbation_json": "",
+        "forme_juridique_mandataire": "",
+        "pays_exercice_mandat": "FRANCE",
+        "services_investissement_json": "",
+        "directives_bancaires_json": "",
+        "autorisation_simple_json": "",
+        "inscription_liste_json": "",
+        "gestions_credits_json": "",
+        "siren_mandataire": null,
+        "adresse_mandataire": "",
+        "services_paiement_json": {
+          "1": {
+            "date_debut": null,
+            "value": false
+          },
+          "2": {
+            "date_debut": null,
+            "value": false
+          },
+          "3": {
+            "date_debut": null,
+            "value": false,
+            "subkeys": {
+              "3C": {
+                "date_debut": null,
+                "value": false
+              },
+              "3A": {
+                "date_debut": null,
+                "value": false
+              },
+              "3B": {
+                "date_debut": null,
+                "value": false
+              }
+            }
+          },
+          "4": {
+            "date_debut": null,
+            "value": false,
+            "subkeys": {
+              "4A": {
+                "date_debut": null,
+                "value": false
+              },
+              "4B": {
+                "date_debut": null,
+                "value": false
+              },
+              "4C": {
+                "date_debut": null,
+                "value": false
+              }
+            }
+          },
+          "5": {
+            "date_debut": null,
+            "value": false
+          },
+          "6": {
+            "date_debut": "2018-11-09",
+            "value": true
+          },
+          "7": {
+            "date_debut": null,
+            "value": false
+          },
+          "8": {
+            "date_debut": null,
+            "value": false
+          },
+          "5.": {
+            "date_debut": null,
+            "value": false
+          }
+        },
+        "denomination_mandataire": null
+      }
+    },
+    "mandataires": null,
+    "passports_sortants": null,
+    "passports_entrants": null
+  },
+  {
+    "id_referentiel": "60124",
+    "cib": "[]",
+    "lei": null,
+    "indicateur_psi": "False",
+    "type_entite": "Personne morale",
+    "denomination": "SNC TABAC PRESSE DU PONT DE VENCE",
+    "nom_commerciaux": null,
+    "sigle": null,
+    "siren": "481665313",
+    "forme_juridique": "Société en nom collectif",
+    "id_entite_parente": null,
+    "modalite_exercice": null,
+    "adresse": "3 route de Grenoble",
+    "code_postal": "38120",
+    "ville": "ST EGREVE",
+    "pays": "FRANCE",
+    "categorie": "Agent PSP",
+    "evenements": null,
+    "approval_withdrawal_process": "False",
+    "authorisations": {
+      "MANDAT_FROM_93744": {
+        "id_referentiel": "60124",
+        "categorie": "Agent PSP",
+        "services_auxiliaires_json": "",
+        "monnaies_electroniques_json": "",
+        "cautions_reglementees_json": "",
+        "id_autorisation": "MANDAT_FROM_93744",
+        "agrement_simple_json": "",
+        "date_debut": "2022-07-15",
+        "exemptions_api_json": "",
+        "secours_api_json": "",
+        "approbation_json": "",
+        "emissions_cryptos_json": "",
+        "habilitations_json": "",
+        "services_investissement_json": "",
+        "directives_bancaires_json": "",
+        "pays_exercice": "FRANCE",
+        "autorisation_simple_json": "",
+        "inscription_liste_json": "",
+        "gestions_credits_json": "",
+        "services_paiement_json": {
+          "1": {
+            "date_debut": "2022-07-15",
+            "value": true
+          },
+          "2": {
+            "date_debut": "2024-02-06",
+            "value": true
+          },
+          "3": {
+            "date_debut": null,
+            "value": false,
+            "subkeys": {
+              "3C": {
+                "date_debut": null,
+                "value": false
+              },
+              "3A": {
+                "date_debut": null,
+                "value": false
+              },
+              "3B": {
+                "date_debut": null,
+                "value": false
+              }
+            }
+          },
+          "4": {
+            "date_debut": null,
+            "value": false,
+            "subkeys": {
+              "4A": {
+                "date_debut": null,
+                "value": false
+              },
+              "4B": {
+                "date_debut": null,
+                "value": false
+              },
+              "4C": {
+                "date_debut": null,
+                "value": false
+              }
+            }
+          },
+          "5": {
+            "date_debut": null,
+            "value": false
+          },
+          "6": {
+            "date_debut": null,
+            "value": false
+          },
+          "7": {
+            "date_debut": null,
+            "value": false
+          },
+          "8": {
+            "date_debut": null,
+            "value": false
+          },
+          "5.": {
+            "date_debut": "2022-07-15",
+            "value": true
+          }
+        },
+        "situation": "MANDAT"
+      },
+      "MANDAT_FROM_54167": {
+        "id_referentiel": "60124",
+        "categorie": "Agent PSP",
+        "services_auxiliaires_json": "",
+        "monnaies_electroniques_json": "",
+        "cautions_reglementees_json": "",
+        "id_autorisation": "MANDAT_FROM_54167",
+        "agrement_simple_json": "",
+        "date_debut": "2015-04-08",
+        "exemptions_api_json": "",
+        "secours_api_json": "",
+        "approbation_json": "",
+        "emissions_cryptos_json": "",
+        "habilitations_json": "",
+        "services_investissement_json": "",
+        "directives_bancaires_json": "",
+        "pays_exercice": "FRANCE",
+        "autorisation_simple_json": "",
+        "inscription_liste_json": "",
+        "gestions_credits_json": "",
+        "services_paiement_json": {
+          "1": {
+            "date_debut": "2015-04-08",
+            "value": true
+          },
+          "2": {
+            "date_debut": "2015-04-08",
+            "value": true
+          },
+          "3": {
+            "date_debut": null,
+            "value": false,
+            "subkeys": {
+              "3C": {
+                "date_debut": null,
+                "value": false
+              },
+              "3A": {
+                "date_debut": null,
+                "value": false
+              },
+              "3B": {
+                "date_debut": null,
+                "value": false
+              }
+            }
+          },
+          "4": {
+            "date_debut": null,
+            "value": false,
+            "subkeys": {
+              "4A": {
+                "date_debut": null,
+                "value": false
+              },
+              "4B": {
+                "date_debut": null,
+                "value": false
+              },
+              "4C": {
+                "date_debut": null,
+                "value": false
+              }
+            }
+          },
+          "5": {
+            "date_debut": null,
+            "value": false
+          },
+          "6": {
+            "date_debut": null,
+            "value": false
+          },
+          "7": {
+            "date_debut": null,
+            "value": false
+          },
+          "8": {
+            "date_debut": null,
+            "value": false
+          },
+          "5.": {
+            "date_debut": null,
+            "value": false
+          }
+        },
+        "situation": "MANDAT"
+      }
+    },
+    "mandants": {
+      "54167": {
+        "type_mandatee": "Personne morale",
+        "cautions_reglementees_json": "",
+        "agrement_simple_json": "",
+        "mandat_label": "Agent PSP",
+        "date_debut": "2015-04-08",
+        "exemptions_api_json": "",
+        "emissions_cryptos_json": "",
+        "habilitations_json": "",
+        "code_postal_mandataire": "",
+        "pays_mandataire": "",
+        "id_mandatee": "60124",
+        "services_auxiliaires_json": "",
+        "monnaies_electroniques_json": "",
+        "ville_mandataire": "",
+        "id_mandator": "54167",
+        "secours_api_json": "",
+        "approbation_json": "",
+        "forme_juridique_mandataire": "",
+        "pays_exercice_mandat": "FRANCE",
+        "services_investissement_json": "",
+        "directives_bancaires_json": "",
+        "autorisation_simple_json": "",
+        "inscription_liste_json": "",
+        "gestions_credits_json": "",
+        "siren_mandataire": null,
+        "adresse_mandataire": "",
+        "services_paiement_json": {
+          "1": {
+            "date_debut": "2015-04-08",
+            "value": true
+          },
+          "2": {
+            "date_debut": "2015-04-08",
+            "value": true
+          },
+          "3": {
+            "date_debut": null,
+            "value": false,
+            "subkeys": {
+              "3C": {
+                "date_debut": null,
+                "value": false
+              },
+              "3A": {
+                "date_debut": null,
+                "value": false
+              },
+              "3B": {
+                "date_debut": null,
+                "value": false
+              }
+            }
+          },
+          "4": {
+            "date_debut": null,
+            "value": false,
+            "subkeys": {
+              "4A": {
+                "date_debut": null,
+                "value": false
+              },
+              "4B": {
+                "date_debut": null,
+                "value": false
+              },
+              "4C": {
+                "date_debut": null,
+                "value": false
+              }
+            }
+          },
+          "5": {
+            "date_debut": null,
+            "value": false
+          },
+          "6": {
+            "date_debut": null,
+            "value": false
+          },
+          "7": {
+            "date_debut": null,
+            "value": false
+          },
+          "8": {
+            "date_debut": null,
+            "value": false
+          },
+          "5.": {
+            "date_debut": null,
+            "value": false
+          }
+        },
+        "denomination_mandataire": null
+      },
+      "93744": {
+        "type_mandatee": "Personne morale",
+        "cautions_reglementees_json": "",
+        "agrement_simple_json": "",
+        "mandat_label": "Agent PSP",
+        "date_debut": "2022-07-15",
+        "exemptions_api_json": "",
+        "emissions_cryptos_json": "",
+        "habilitations_json": "",
+        "code_postal_mandataire": "",
+        "pays_mandataire": "",
+        "id_mandatee": "60124",
+        "services_auxiliaires_json": "",
+        "monnaies_electroniques_json": "",
+        "ville_mandataire": "",
+        "id_mandator": "93744",
+        "secours_api_json": "",
+        "approbation_json": "",
+        "forme_juridique_mandataire": "",
+        "pays_exercice_mandat": "FRANCE",
+        "services_investissement_json": "",
+        "directives_bancaires_json": "",
+        "autorisation_simple_json": "",
+        "inscription_liste_json": "",
+        "gestions_credits_json": "",
+        "siren_mandataire": null,
+        "adresse_mandataire": "",
+        "services_paiement_json": {
+          "1": {
+            "date_debut": "2022-07-15",
+            "value": true
+          },
+          "2": {
+            "date_debut": "2024-02-06",
+            "value": true
+          },
+          "3": {
+            "date_debut": null,
+            "value": false,
+            "subkeys": {
+              "3C": {
+                "date_debut": null,
+                "value": false
+              },
+              "3A": {
+                "date_debut": null,
+                "value": false
+              },
+              "3B": {
+                "date_debut": null,
+                "value": false
+              }
+            }
+          },
+          "4": {
+            "date_debut": null,
+            "value": false,
+            "subkeys": {
+              "4A": {
+                "date_debut": null,
+                "value": false
+              },
+              "4B": {
+                "date_debut": null,
+                "value": false
+              },
+              "4C": {
+                "date_debut": null,
+                "value": false
+              }
+            }
+          },
+          "5": {
+            "date_debut": null,
+            "value": false
+          },
+          "6": {
+            "date_debut": null,
+            "value": false
+          },
+          "7": {
+            "date_debut": null,
+            "value": false
+          },
+          "8": {
+            "date_debut": null,
+            "value": false
+          },
+          "5.": {
+            "date_debut": "2022-07-15",
+            "value": true
+          }
+        },
+        "denomination_mandataire": null
+      }
+    },
+    "mandataires": null,
+    "passports_sortants": null,
+    "passports_entrants": null
+  },
+{
+    "id_referentiel": "6329",
+    "cib": "[{\"code\": \"12448\", \"date\": \"1993-06-30\"}]",
+    "lei": "2549003Q5J2G7ALNU316",
+    "indicateur_psi": "False",
+    "type_entite": "Succursale de pays tiers",
+    "denomination": "Barclays bank plc Monaco",
+    "nom_commerciaux": null,
+    "sigle": null,
+    "siren": null,
+    "forme_juridique": null,
+    "id_entite_parente": "4136",
+    "modalite_exercice": "Succursale de pays tiers",
+    "adresse": "31 avenue de la Costa",
+    "code_postal": "98000",
+    "ville": "MONACO",
+    "pays": "MONACO",
+    "categorie": "Établissement de Crédit",
+    "evenements": null,
+    "approval_withdrawal_process": "False",
+    "authorisations": {
+      "2065": {
+        "id_referentiel": "6329",
+        "cautions_reglementees_json": {
+          "CAUTIONS RÉGLEMENTÉES": {
+            "date_debut": "1999-06-25",
+            "value": true
+          }
+        },
+        "db_keys": "",
+        "agrement_simple_json": "",
+        "sous_categorie": "Banque",
+        "date_debut": "1993-06-30",
+        "ec_keys": "",
+        "exemptions_api_json": "",
+        "gc_keys": "",
+        "emissions_cryptos_json": "",
+        "habilitations_json": {
+          "CONTREPARTIE CENTRALE": {
+            "date_debut": null,
+            "value": false
+          },
+          "TENUE DE COMPTE-CONSERVATION": {
+            "date_debut": "2009-12-18",
+            "value": true
+          },
+          "AGRÉMENT EN TANT QUE DÉPOSITAIRE D'OPCVM": {
+            "date_debut": null,
+            "value": false
+          },
+          "APPROBATION CAHIER DES CHARGES DÉPOSITAIRE D'OPCVM": {
+            "date_debut": null,
+            "value": false
+          },
+          "COMPENSATION D'INSTRUMENTS FINANCIERS": {
+            "date_debut": null,
+            "value": false
+          },
+          "INSTITUT DE MICROFINANCE (L 511-6 5°)": {
+            "date_debut": null,
+            "value": false
+          }
+        },
+        "appro_keys": "",
+        "sa_keys": "",
+        "nature_autorisation": "Agrément",
+        "situation": "ACTIF",
+        "insc_keys": "",
+        "aut_s_keys": "",
+        "categorie": "Établissement de Crédit",
+        "services_auxiliaires_json": "",
+        "monnaies_electroniques_json": "",
+        "id_autorisation": "2065",
+        "secours_api_json": "",
+        "approbation_json": "",
+        "ema_keys": "",
+        "sp_keys": "",
+        "agr_keys": "",
+        "secours_keys": "",
+        "services_investissement_json": "",
+        "directives_bancaires_json": "",
+        "pays_exercice": "MONACO",
+        "autorisation_simple_json": "",
+        "hab_keys": ",TENUE DE COMPTE-CONSERVATION,",
+        "inscription_liste_json": "",
+        "gestions_credits_json": "",
+        "me_keys": "",
+        "cr_keys": ",CAUTIONS RÉGLEMENTÉES,",
+        "si_keys": "",
+        "services_paiement_json": ""
+      }
+    },
+    "mandants": null,
+    "mandataires": null,
+    "passports_sortants": null,
+    "passports_entrants": null
+  }  
+]

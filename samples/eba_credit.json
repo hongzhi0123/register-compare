@@ -1,0 +1,152 @@
+[
+    {
+        "_payload": {
+            "CA_OwnerID": "AT_FMA",
+            "EntityCode": "529900DADVVDC7X65L89",
+            "EntityType": "CRD_CRE_INS",
+            "Properties": [
+                {
+                    "ENT_COD": "529900DADVVDC7X65L89"
+                },
+                {
+                    "ENT_COD_TYP": "LEI"
+                },
+                {
+                    "ENT_NAT_REF_COD": "1629387"
+                },
+                {
+                    "ENT_NAM": "Austrian Anadi Bank AG"
+                },
+                {
+                    "ENT_COU_RES": "AT"
+                },
+                {
+                    "ENT_TOW_CIT_RES": "Klagenfurt am Wörthersee"
+                },
+                {
+                    "ENT_AUT": [
+                        "2014-09-04"
+                    ]
+                },
+                {
+                    "EEA_DEP_GUA_SCH": "AT_EA"
+                },
+                {
+                    "COM_AUT": "AT_FMA"
+                }
+            ],
+            "__EBA_EntityVersion": "20260707000000000"
+        }
+    },
+    {
+        "_payload": {
+            "CA_OwnerID": "SE_FINA",
+            "EntityCode": "549300TMBWKN02J3ZT25",
+            "EntityType": "CRD_CRE_INS",
+            "Properties": [
+                {
+                    "ENT_COD": "549300TMBWKN02J3ZT25"
+                },
+                {
+                    "ENT_COD_TYP": "LEI"
+                },
+                {
+                    "ENT_NAT_REF_COD": "5562309004"
+                },
+                {
+                    "ENT_NAM": "Avida Bank AB (publ)"
+                },
+                {
+                    "ENT_COU_RES": "SE"
+                },
+                {
+                    "ENT_TOW_CIT_RES": "Stockholm"
+                },
+                {
+                    "ENT_AUT": [
+                        "2019-04-12"
+                    ]
+                },
+                {
+                    "EEA_DEP_GUA_SCH": "SE_NDO"
+                }
+            ],
+            "__EBA_EntityVersion": "20260702000000000"
+        }
+    },
+    {
+        "_payload": {
+            "CA_OwnerID": "DE_BAFIN",
+            "EntityCode": "52990050SU0S4QQ4Z793D",
+            "EntityType": "CRD_CRE_INS",
+            "Properties": [
+                {
+                    "ENT_COD": "52990050SU0S4QQ4Z793D"
+                },
+                {
+                    "ENT_COD_TYP": "NON_LEI"
+                },
+                {
+                    "ENT_NAT_REF_COD": "8410551/BAKNR:105658"
+                },
+                {
+                    "ENT_NAM": "LBS Landesbausparkasse Saar"
+                },
+                {
+                    "ENT_COU_RES": "DE"
+                },
+                {
+                    "ENT_TOW_CIT_RES": "Saarbrücken"
+                },
+                {
+                    "ENT_AUT": [
+                        "2013-11-20"
+                    ]
+                },
+                {
+                    "EEA_DEP_GUA_SCH": "DE_DSGVH"
+                }
+            ],
+            "__EBA_EntityVersion": "20251231000000000"
+        }
+    },
+    {
+        "_payload": {
+            "CA_OwnerID": "DE_BAFIN",
+            "EntityCode": "391200A8DWHFBC0GKO15",
+            "EntityType": "CRD_CRE_INS",
+            "Properties": [
+                {
+                    "ENT_COD": "391200A8DWHFBC0GKO15"
+                },
+                {
+                    "ENT_COD_TYP": "LEI"
+                },
+                {
+                    "ENT_NAT_REF_COD": "100211"
+                },
+                {
+                    "ENT_NAM": "Union - Bank, Aktiengesellschaft"
+                },
+                {
+                    "ENT_COU_RES": "DE"
+                },
+                {
+                    "ENT_TOW_CIT_RES": "Flensburg"
+                },
+                {
+                    "ENT_AUT": [
+                        "2016-09-20"
+                    ]
+                },
+                {
+                    "EEA_DEP_GUA_SCH": "DE_EDOE"
+                },
+                {
+                    "COM_AUT": "DE_BAFIN"
+                }
+            ],
+            "__EBA_EntityVersion": "20260630000000000"
+        }
+    }
+]

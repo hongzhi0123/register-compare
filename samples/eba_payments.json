@@ -1,0 +1,416 @@
+[
+    [
+        {
+            "__EBA_Disclaimer": {
+                "disclaimer": {
+                    "sectionHeader": "Disclaimer",
+                    "line1": "The present Register has been set up by the EBA solely on the basis of information provided by national competent authorities of the EEA Member States. Therefore, unlike national registers under PSD2, this Register has no legal significance and confers no rights in law. If an unauthorised institution is inadvertently included in the Register, its legal status is in no way altered; similarly, if an institution has inadvertently been omitted from the Register, the validity of its authorisation will not be affected.",
+                    "line2": "With regard to any content in the field ‘Name of the institutions’ that describes the ‘legal form’ of the institution, it should be noted that such content is in most cases untranslatable and that any terminological similarities between two such entries are not to be taken to indicate that the legal status is the same.",
+                    "line3": "The European Banking Authority is responsible only for the accurate reproduction of the information received by competent authorities for each natural or legal person included in the register, while responsibility for the accuracy of that information lies with the competent authorities at national level.",
+                    "line4": "Please note that the United Kingdom (UK) is no longer an EU Member State. Information on UK entities and on EEA entities operating in the UK is in the process of being removed from the EBA’s register. Until this process is complete, where such information is still temporarily available in the register, please note that EU law does not apply to the UK."
+                },
+                "disclaimerOnDataProtection": {
+                    "sectionHeader": "Disclaimer on Data Protection",
+                    "line1": "The processing of personal data in the Union institutions and bodies like agencies is regulated by Regulation (EU) 2018/1725 of the European Parliament and of the Council of 23 October 2018 on the protection of natural persons with regard to the processing of personal data by the Union institutions, bodies, offices and agencies and on the free movement of such data, and repealing Regulation (EC) No 45/2001 and Decision No 1247/2002/EC.",
+                    "line2": "The data subject shall have the right of access to his/her personal data and the right to rectify any such data that is inaccurate or incomplete. Should the data subject have any queries concerning the processing of his/her personal data, (s)he shall address them to the European Banking Authority which is the controller. More information on the processing of your personal data and the contact details of the controller are included in the Specific Privacy Notice.",
+                    "line3": "Specific private notice on use of personal data in the EBA Register on payment and electronic money institutions",
+                    "line4": "https://eba.europa.eu/documents/10180/2620199/Specific+privacy+notice++-+EBA+Register+under+PSD2+%28002%29%20%28002%29%20%28003%29.pdf/e1e236f4-1115-4ba8-afab-a372416b624e"
+                },
+                "registerDownload": {
+                    "sectionHeader": "Register Download",
+                    "line1": "The European Banking Authority is responsible only for the accurate reproduction of the information received by competent authorities for each natural or legal person included in the register, while responsibility for the accuracy of that information lies with the competent authorities at national level.",
+                    "line2": "This file, which is available for download, reproduces the information contained on the EBA register of payment and electronic money institutions. It is updated on regular basis, with the update times being displayed on the register. For transparency reasons, public users of the register should be aware that there may be a discrepancy between the information contained on the file and the information contained on the actual register depending on the time of the update of the information on the file and the timing of its download."
+                }
+            }
+        }
+    ],
+    [
+        {
+            "CA_OwnerID": "MT_MFSA",
+            "EntityCode": "MT_MFSA!CTL7",
+            "EntityType": "PSD_PI",
+            "Properties": [
+                {
+                    "ENT_AUT": [
+                        "2026-06-26"
+                    ]
+                },
+                {
+                    "ENT_NAT_REF_COD": "C87860"
+                },
+                {
+                    "ENT_NAM": "CF TECHNOLOGIES LTD"
+                },
+                {
+                    "ENT_NAM_COM": "CF TECHNOLOGIES LTD"
+                },
+                {
+                    "ENT_ADD": "CENTRIS BUSINESS GATEWAY, LEVEL 4/W, TRIQ IS-SALIB TAL-IMRIEHEL, ZONE 3, CENTRAL BUSINESS DISTRICT"
+                },
+                {
+                    "ENT_TOW_CIT_RES": "BIRKIRKARA"
+                },
+                {
+                    "ENT_POS_COD": "CBD3020"
+                },
+                {
+                    "ENT_COU_RES": "MT"
+                }
+            ],
+            "Services": [
+                {
+                    "MT": [
+                        "PS_010",
+                        "PS_020",
+                        "PS_03A",
+                        "PS_03B",
+                        "PS_03C"
+                    ]
+                },
+                {
+                    "AT": [
+                        "PS_010",
+                        "PS_020",
+                        "PS_03A",
+                        "PS_03B",
+                        "PS_03C"
+                    ]
+                },
+                {
+                    "BE": [
+                        "PS_010",
+                        "PS_020",
+                        "PS_03A",
+                        "PS_03B",
+                        "PS_03C"
+                    ]
+                },
+                {
+                    "BG": [
+                        "PS_010",
+                        "PS_020",
+                        "PS_03A",
+                        "PS_03B",
+                        "PS_03C"
+                    ]
+                },
+                {
+                    "CY": [
+                        "PS_010",
+                        "PS_020",
+                        "PS_03A",
+                        "PS_03B",
+                        "PS_03C"
+                    ]
+                },
+                {
+                    "CZ": [
+                        "PS_010",
+                        "PS_020",
+                        "PS_03A",
+                        "PS_03B",
+                        "PS_03C"
+                    ]
+                },
+                {
+                    "DE": [
+                        "PS_010",
+                        "PS_020",
+                        "PS_03A",
+                        "PS_03B",
+                        "PS_03C"
+                    ]
+                },
+                {
+                    "PL": [
+                        "PS_010",
+                        "PS_020",
+                        "PS_03A",
+                        "PS_03B",
+                        "PS_03C"
+                    ]
+                },
+                {
+                    "PT": [
+                        "PS_010",
+                        "PS_020",
+                        "PS_03A",
+                        "PS_03B",
+                        "PS_03C"
+                    ]
+                },
+                {
+                    "RO": [
+                        "PS_010",
+                        "PS_020",
+                        "PS_03A",
+                        "PS_03B",
+                        "PS_03C"
+                    ]
+                },
+                {
+                    "SE": [
+                        "PS_010",
+                        "PS_020",
+                        "PS_03A",
+                        "PS_03B",
+                        "PS_03C"
+                    ]
+                },
+                {
+                    "SI": [
+                        "PS_010",
+                        "PS_020",
+                        "PS_03A",
+                        "PS_03B",
+                        "PS_03C"
+                    ]
+                },
+                {
+                    "SK": [
+                        "PS_010",
+                        "PS_020",
+                        "PS_03A",
+                        "PS_03B",
+                        "PS_03C"
+                    ]
+                },
+                {
+                    "LT": [
+                        "PS_010",
+                        "PS_020",
+                        "PS_03A",
+                        "PS_03B",
+                        "PS_03C"
+                    ]
+                },
+                {
+                    "LU": [
+                        "PS_010",
+                        "PS_020",
+                        "PS_03A",
+                        "PS_03B",
+                        "PS_03C"
+                    ]
+                },
+                {
+                    "LV": [
+                        "PS_010",
+                        "PS_020",
+                        "PS_03A",
+                        "PS_03B",
+                        "PS_03C"
+                    ]
+                },
+                {
+                    "NL": [
+                        "PS_010",
+                        "PS_020",
+                        "PS_03A",
+                        "PS_03B",
+                        "PS_03C"
+                    ]
+                },
+                {
+                    "NO": [
+                        "PS_010",
+                        "PS_020",
+                        "PS_03A",
+                        "PS_03B",
+                        "PS_03C"
+                    ]
+                },
+                {
+                    "HR": [
+                        "PS_010",
+                        "PS_020",
+                        "PS_03A",
+                        "PS_03B",
+                        "PS_03C"
+                    ]
+                },
+                {
+                    "HU": [
+                        "PS_010",
+                        "PS_020",
+                        "PS_03A",
+                        "PS_03B",
+                        "PS_03C"
+                    ]
+                },
+                {
+                    "IE": [
+                        "PS_010",
+                        "PS_020",
+                        "PS_03A",
+                        "PS_03B",
+                        "PS_03C"
+                    ]
+                },
+                {
+                    "IS": [
+                        "PS_010",
+                        "PS_020",
+                        "PS_03A",
+                        "PS_03B",
+                        "PS_03C"
+                    ]
+                },
+                {
+                    "IT": [
+                        "PS_010",
+                        "PS_020",
+                        "PS_03A",
+                        "PS_03B",
+                        "PS_03C"
+                    ]
+                },
+                {
+                    "LI": [
+                        "PS_010",
+                        "PS_020",
+                        "PS_03A",
+                        "PS_03B",
+                        "PS_03C"
+                    ]
+                },
+                {
+                    "DK": [
+                        "PS_010",
+                        "PS_020",
+                        "PS_03A",
+                        "PS_03B",
+                        "PS_03C"
+                    ]
+                },
+                {
+                    "EE": [
+                        "PS_010",
+                        "PS_020",
+                        "PS_03A",
+                        "PS_03B",
+                        "PS_03C"
+                    ]
+                },
+                {
+                    "ES": [
+                        "PS_010",
+                        "PS_020",
+                        "PS_03A",
+                        "PS_03B",
+                        "PS_03C"
+                    ]
+                },
+                {
+                    "FI": [
+                        "PS_010",
+                        "PS_020",
+                        "PS_03A",
+                        "PS_03B",
+                        "PS_03C"
+                    ]
+                },
+                {
+                    "FR": [
+                        "PS_010",
+                        "PS_020",
+                        "PS_03A",
+                        "PS_03B",
+                        "PS_03C"
+                    ]
+                },
+                {
+                    "GR": [
+                        "PS_010",
+                        "PS_020",
+                        "PS_03A",
+                        "PS_03B",
+                        "PS_03C"
+                    ]
+                }
+            ],
+            "__EBA_EntityVersion": "20260703131715461"
+        },
+        {
+            "CA_OwnerID": "CZ_CNB",
+            "EntityCode": "CZ_CNB!10669205",
+            "EntityType": "PSD_PI",
+            "Properties": [
+                {
+                    "ENT_AUT": [
+                        "2024-12-31"
+                    ]
+                },
+                {
+                    "ENT_NAT_REF_COD": "10669205"
+                },
+                {
+                    "ENT_NAM": "Finbricks, s.r.o. "
+                },
+                {
+                    "ENT_ADD": "Václavské náměstí 796/42"
+                },
+                {
+                    "ENT_TOW_CIT_RES": "Praha"
+                },
+                {
+                    "ENT_POS_COD": "11000"
+                },
+                {
+                    "ENT_COU_RES": "CZ"
+                }
+            ],
+            "Services": [
+                {
+                    "CZ": [
+                        "PS_070",
+                        "PS_080"
+                    ]
+                },
+                {
+                    "AT": [
+                        "PS_070",
+                        "PS_080"
+                    ]
+                },
+                {
+                    "DE": [
+                        "PS_070",
+                        "PS_080"
+                    ]
+                },
+                {
+                    "HU": [
+                        "PS_070",
+                        "PS_080"
+                    ]
+                },
+                {
+                    "LT": [
+                        "PS_070",
+                        "PS_080"
+                    ]
+                },
+                {
+                    "PL": [
+                        "PS_070",
+                        "PS_080"
+                    ]
+                },
+                {
+                    "RO": [
+                        "PS_070",
+                        "PS_080"
+                    ]
+                },
+                {
+                    "SK": [
+                        "PS_070",
+                        "PS_080"
+                    ]
+                }
+            ],
+            "__EBA_EntityVersion": "20260703190110419"
+        }
+    ]
+]
