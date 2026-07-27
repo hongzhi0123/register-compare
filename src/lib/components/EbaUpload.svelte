@@ -12,7 +12,7 @@
 	function uploadJsonFile(file: File): Promise<{ success: boolean; datasetId?: string; count?: number; error?: string }> {
 		return new Promise((resolve, reject) => {
 			const xhr = new XMLHttpRequest();
-			xhr.open('POST', '/api/eba');
+			xhr.open('POST', '/api/sources/eba');
 			xhr.setRequestHeader('Content-Type', 'application/json');
 
 			xhr.upload.onprogress = (event) => {

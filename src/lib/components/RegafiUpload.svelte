@@ -12,7 +12,7 @@
 	function uploadJsonFile(file: File): Promise<{ success: boolean; datasetId?: string; count?: number; error?: string }> {
 		return new Promise((resolve, reject) => {
 			const xhr = new XMLHttpRequest();
-			xhr.open('POST', '/api/regafi');
+			xhr.open('POST', '/api/sources/regafi');
 			xhr.setRequestHeader('Content-Type', 'application/json');
 
 			xhr.upload.onprogress = (event) => {
