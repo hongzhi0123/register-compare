@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseEbaPayload } from '../../lib/server/eba';
+import { parseEbaPayload } from '../../lib/server/sources/eba-adapter';
 
 describe('parseEbaPayload', () => {
 	it('extracts a nested entity and normalizes the comparable id', () => {

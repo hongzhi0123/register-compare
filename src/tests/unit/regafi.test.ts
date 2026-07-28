@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { keepFrenchEntities, normalizeRegafiEntity, parseRegafiJson } from '../../lib/server/regafi';
+import { keepFrenchEntities, normalizeRegafiEntity, parseRegafiJson } from '../../lib/server/sources/regafi-adapter';
 import type { RegafiRecord } from '$lib/types';
 
 describe('regafi normalization', () => {

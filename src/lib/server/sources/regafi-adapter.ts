@@ -1,4 +1,5 @@
 import type { RegafiRecord, NormalizedEntity } from '$lib/types';
+import type { ParseInput } from './types';
 
 const PSD2_ROLE_LABELS: Record<string, string> = {
 	'1': 'Versement d\'espèces sur un compte de paiement',
@@ -97,7 +98,8 @@ function asRegafiRows(value: unknown): unknown[] {
 	if (!value || typeof value !== 'object') return [value];
 
 	const entries = Object.values(value);
-	if (	entries.length > 0 &&
+	if (
+		entries.length > 0 &&
 		entries.every((entry) => entry && typeof entry === 'object' && !Array.isArray(entry))
 	) {
 		return entries;
@@ -137,9 +139,9 @@ function extractRegafiRolesByCountry(
 	const addFromAuthorisations = (parsed: unknown) => {
 		for (const item of asRegafiRows(parsed)) {
 			if (!item || typeof item !== 'object') {
-					addRoles(defaultCountry, extractRoleCodes(item));
-					continue;
-				}
+				addRoles(defaultCountry, extractRoleCodes(item));
+				continue;
+			}
 
 			const row = item as Record<string, unknown>;
 			const country =
@@ -236,23 +238,19 @@ export async function fetchRegafiEntities(apiKey?: string): Promise<NormalizedEn
 }
 
 export function parseRegafiJson(json: string): NormalizedEntity[] {
-  const data = JSON.parse(json);
-  const records: unknown[] = data.results || (Array.isArray(data) ? data : []);
+	const data = JSON.parse(json);
+	const records: unknown[] = data.results || (Array.isArray(data) ? data : []);
 
-  if (records.length === 0) return [];
+	if (records.length === 0) return [];
 
-  const first = records[0] as Record<string, unknown>;
-  if (first.fields && typeof first.fields === 'object') {
+	const first = records[0] as Record<string, unknown>;
+	if (first.fields && typeof first.fields === 'object') {
 		return (records as RegafiRecord[]).map(normalizeRegafiEntity);
-  } else {
+	} else {
 		return records.map((r) => normalizeFlatEntity(r as Record<string, unknown>));
-  }
+	}
 }
 
-/**
- * Parse the CIB JSON string (e.g. `[{"code": "12448", "date": "1993-06-30"}]`)
- * and return the first code, or null if empty/invalid.
- */
 function extractCibCode(raw: string | null | undefined): string | null {
 	if (!raw || raw === '[]') return null;
 	try {
@@ -352,4 +350,26 @@ export function getRegafiCategories(): string[] {
 		'Entreprise mère de société de financement',
 		'Institut de microfinance'
 	];
+}
+
+export async function parseRegafiEntities(input: ParseInput): Promise<NormalizedEntity[]> {
+	if (input.apiKey) {
+		return fetchRegafiEntities(input.apiKey);
+	}
+
+	if (input.text) {
+		const body = JSON.parse(input.text);
+		if (Array.isArray(body)) {
+			return body.map(normalizeFlatEntity);
+		}
+		if (body.results) {
+			return body.results.map(normalizeRegafiEntity);
+		}
+		if (body.json) {
+			return parseRegafiJson(body.json);
+		}
+		return parseRegafiJson(input.text);
+	}
+
+	throw new Error('Regafi parser requires text body or apiKey');
 }

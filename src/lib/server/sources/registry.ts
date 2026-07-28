@@ -1,12 +1,7 @@
 import type { SourceDefinition, SourceColumnDef, SourceId, ParseInput } from './types';
 import type { NormalizedEntity } from '$lib/types';
-import { parseEbaStream } from '$lib/server/eba';
-import {
-	fetchRegafiEntities,
-	parseRegafiJson,
-	normalizeRegafiEntity,
-	normalizeFlatEntity
-} from '$lib/server/regafi';
+import { parseEbaEntities } from './eba-adapter';
+import { parseRegafiEntities } from './regafi-adapter';
 import { parseBafinEntities } from './bafin-adapter';
 import { parseFmaEntities } from './fma-adapter';
 
@@ -37,33 +32,6 @@ const REGAFI_COLUMNS: SourceColumnDef[] = [
 	{ key: 'lei', label: 'LEI', sortable: true, filterType: 'text-select' },
 	{ key: 'idReferentiel', label: 'ID referentiel', sortable: true, filterType: 'text-select' }
 ];
-
-async function ebaParse(input: ParseInput): Promise<NormalizedEntity[]> {
-	if (input.stream) {
-		return parseEbaStream(input.stream);
-	}
-	throw new Error('EBA parser requires a ReadableStream body');
-}
-
-async function regafiParse(input: ParseInput): Promise<NormalizedEntity[]> {
-	if (input.apiKey) {
-		return fetchRegafiEntities(input.apiKey);
-	}
-	if (input.text) {
-		const body = JSON.parse(input.text);
-		if (Array.isArray(body)) {
-			return body.map(normalizeFlatEntity);
-		}
-		if (body.results) {
-			return body.results.map(normalizeRegafiEntity);
-		}
-		if (body.json) {
-			return parseRegafiJson(body.json);
-		}
-		return parseRegafiJson(input.text);
-	}
-	throw new Error('Regafi parser requires text body or apiKey');
-}
 
 const BAFIN_COLUMNS: SourceColumnDef[] = [
 	{ key: 'siren', label: 'BAK NR', sortable: true, filterType: 'text-select' },
@@ -109,7 +77,7 @@ const SOURCES: Partial<Record<SourceId, SourceDefinition>> = {
 		accentColor: 'blue',
 		uploadFormats: ['json'],
 		columns: EBA_COLUMNS,
-		parse: ebaParse
+		parse: parseEbaEntities
 	},
 	'eba-credit': {
 		id: 'eba-credit',
@@ -118,7 +86,7 @@ const SOURCES: Partial<Record<SourceId, SourceDefinition>> = {
 		accentColor: 'blue',
 		uploadFormats: ['json'],
 		columns: EBA_COLUMNS,
-		parse: withSourceLabel('eba-credit', ebaParse)
+		parse: withSourceLabel('eba-credit', parseEbaEntities)
 	},
 	'eba-payment': {
 		id: 'eba-payment',
@@ -127,7 +95,7 @@ const SOURCES: Partial<Record<SourceId, SourceDefinition>> = {
 		accentColor: 'purple',
 		uploadFormats: ['json'],
 		columns: EBA_COLUMNS,
-		parse: withSourceLabel('eba-payment', ebaParse)
+		parse: withSourceLabel('eba-payment', parseEbaEntities)
 	},
 	regafi: {
 		id: 'regafi',
@@ -136,7 +104,7 @@ const SOURCES: Partial<Record<SourceId, SourceDefinition>> = {
 		accentColor: 'red',
 		uploadFormats: ['json'],
 		columns: REGAFI_COLUMNS,
-		parse: regafiParse
+		parse: parseRegafiEntities
 	},
 	'regafi-credit': {
 		id: 'regafi-credit',
@@ -145,7 +113,7 @@ const SOURCES: Partial<Record<SourceId, SourceDefinition>> = {
 		accentColor: 'red',
 		uploadFormats: ['json'],
 		columns: REGAFI_COLUMNS,
-		parse: withSourceLabel('regafi-credit', regafiParse)
+		parse: withSourceLabel('regafi-credit', parseRegafiEntities)
 	},
 	'regafi-payment': {
 		id: 'regafi-payment',
@@ -154,7 +122,7 @@ const SOURCES: Partial<Record<SourceId, SourceDefinition>> = {
 		accentColor: 'purple',
 		uploadFormats: ['json'],
 		columns: REGAFI_COLUMNS,
-		parse: withSourceLabel('regafi-payment', regafiParse)
+		parse: withSourceLabel('regafi-payment', parseRegafiEntities)
 	},
 	bafin: {
 		id: 'bafin',

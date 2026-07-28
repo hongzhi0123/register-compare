@@ -1,5 +1,6 @@
 import type { NormalizedEntity } from '$lib/types';
-import { extractJsonObjects } from './stream-json';
+import { extractJsonObjects } from '$lib/server/stream-json';
+import type { ParseInput } from './types';
 
 function normalizeCountryCode(country: string | null): string {
 	if (!country) return 'UNK';
@@ -71,7 +72,6 @@ function extractRoleCodes(value: unknown): string[] {
 		const upper = value.toUpperCase();
 		const roles = new Set<string>();
 
-		// Match known PSD2 service codes: PS_xxx, PSP_xxx — return raw codes
 		const matches = upper.match(/\b(PS_\d{2}[A-Z]?|PSP_[A-Z]{2,})\b/g);
 		if (matches) {
 			for (const m of matches) {
@@ -79,7 +79,6 @@ function extractRoleCodes(value: unknown): string[] {
 			}
 		}
 
-		// Fallback for embedded codes (e.g. inside longer strings)
 		if (roles.size === 0) {
 			for (const code of Object.keys(PSD2_SERVICE_LABELS)) {
 				if (upper.includes(code.toUpperCase())) {
@@ -329,7 +328,6 @@ function extractProperties(raw: Record<string, unknown>): Record<string, string>
 	for (const item of raw.Properties) {
 		if (!item || typeof item !== 'object') continue;
 
-		// Shape 1: { PropertyCode: 'ENT_NAM', PropertyValue: '...' }
 		const code = 'PropertyCode' in item ? item.PropertyCode : undefined;
 		if (typeof code === 'string') {
 			const value = normalizePropertyValue('PropertyValue' in item ? item.PropertyValue : undefined);
@@ -337,7 +335,6 @@ function extractProperties(raw: Record<string, unknown>): Record<string, string>
 			continue;
 		}
 
-		// Shape 2: { ENT_NAM: '...' } or { ENT_ADD: ['line1', 'line2'] }
 		for (const [key, value] of Object.entries(item)) {
 			const normalized = normalizePropertyValue(value);
 			if (normalized) props[key] = normalized;
@@ -380,7 +377,6 @@ function pickFirstNonEmpty(props: Record<string, string>, keys: string[]): strin
 }
 
 function extractCountry(props: Record<string, string>): string | null {
-	// EBA payloads can expose country with different property codes depending on the feed version.
 	return pickFirstNonEmpty(props, [
 		'ENT_COU_RES',
 		'ENT_COU_COD_RES',
@@ -404,7 +400,6 @@ function buildPropsFromRaw(raw: Record<string, unknown>): { props: Record<string
 	return { props, propsRaw };
 }
 
-
 function formatEntAutDates(dates: unknown): { formatted: string; expired: boolean } {
 	if (!Array.isArray(dates) || dates.length === 0) {
 		return { formatted: '', expired: false };
@@ -416,7 +411,6 @@ function formatEntAutDates(dates: unknown): { formatted: string; expired: boolea
 	const parts: string[] = [];
 	let hasActivePeriod = false;
 
-	// Process pairs: even indices (0,2,4...) = start, odd indices (1,3,5...) = expiry
 	for (let j = 0; j < dates.length; j += 2) {
 		const start = typeof dates[j] === 'string' ? dates[j].trim() : '';
 		const end = j + 1 < dates.length && typeof dates[j + 1] === 'string' ? dates[j + 1].trim() : null;
@@ -424,14 +418,14 @@ function formatEntAutDates(dates: unknown): { formatted: string; expired: boolea
 		if (!start) continue;
 
 		if (end) {
-			parts.push(start + ' – ' + end);
+			parts.push(start + ' - ' + end);
 			const endDate = new Date(end);
 			endDate.setHours(0, 0, 0, 0);
 			if (endDate >= today) {
 				hasActivePeriod = true;
 			}
 		} else {
-			parts.push(start + ' – present');
+			parts.push(start + ' - present');
 			hasActivePeriod = true;
 		}
 	}
@@ -441,6 +435,7 @@ function formatEntAutDates(dates: unknown): { formatted: string; expired: boolea
 		expired: parts.length > 0 && !hasActivePeriod
 	};
 }
+
 function normalizeEbaEntity(raw: Record<string, unknown>): NormalizedEntity | null {
 	const companyId = raw['company_id'];
 	if (companyId && typeof companyId === 'string' && companyId.trim()) {
@@ -452,7 +447,6 @@ function normalizeEbaEntity(raw: Record<string, unknown>): NormalizedEntity | nu
 			categorie = activity.trim();
 		}
 
-		// Try to extract roles from the flat shape too (Services, authorisations, etc.)
 		const flatCountry = raw['country'] ? String(raw['country']).trim() : null;
 		const { props: flatProps, propsRaw: flatPropsRaw } = buildPropsFromRaw(raw);
 		const flatRolesByCountry = extractRolesByCountry(raw, flatProps, flatPropsRaw, flatCountry);
@@ -481,25 +475,23 @@ function normalizeEbaEntity(raw: Record<string, unknown>): NormalizedEntity | nu
 	if (!siren) return null;
 	const rolesByCountry = extractRolesByCountry(raw, props, propsRaw, country || 'FRANCE');
 
+	const entAutRaw = propsRaw['ENT_AUT'];
+	const { formatted: entAutFormatted, expired: entAutExpired } = formatEntAutDates(entAutRaw);
+	const comAutRaw = propsRaw['COM_AUT'];
+	const comAut = typeof comAutRaw === 'string' ? comAutRaw.trim() : null;
+	const ebaVersion = raw.__EBA_EntityVersion != null ? String(raw.__EBA_EntityVersion) : null;
+	const extra: Record<string, string | null> = {};
+	if (entAutFormatted) {
+		extra.entAut = entAutFormatted;
+		extra.entAutStatus = entAutExpired ? 'Expired' : 'Active';
+	}
+	if (comAut) {
+		extra.comAut = comAut;
+	}
+	if (ebaVersion) {
+		extra.ebaVersion = ebaVersion;
+	}
 
-		// Extract authorization dates from ENT_AUT
-		const entAutRaw = propsRaw['ENT_AUT'];
-		const { formatted: entAutFormatted, expired: entAutExpired } = formatEntAutDates(entAutRaw);
-		// COM_AUT is a plain string indicating the competent authority (NCA)
-		const comAutRaw = propsRaw['COM_AUT'];
-		const comAut = typeof comAutRaw === 'string' ? comAutRaw.trim() : null;
-		const ebaVersion = raw.__EBA_EntityVersion != null ? String(raw.__EBA_EntityVersion) : null;
-		const extra: Record<string, string | null> = {};
-		if (entAutFormatted) {
-			extra.entAut = entAutFormatted;
-			extra.entAutStatus = entAutExpired ? 'Expired' : 'Active';
-		}
-		if (comAut) {
-			extra.comAut = comAut;
-		}
-		if (ebaVersion) {
-			extra.ebaVersion = ebaVersion;
-		}
 	return {
 		siren,
 		denomination: props['ENT_NAM'] || '',
@@ -511,7 +503,7 @@ function normalizeEbaEntity(raw: Record<string, unknown>): NormalizedEntity | nu
 		source: 'eba',
 		rolesByCountry,
 		rolesSummary: summarizeRoles(rolesByCountry),
-			extra: Object.keys(extra).length > 0 ? extra : undefined,
+		extra: Object.keys(extra).length > 0 ? extra : undefined,
 	};
 }
 
@@ -550,11 +542,23 @@ export async function parseEbaStream(webStream: ReadableStream): Promise<Normali
 	for await (const raw of extractJsonObjects(webStream)) {
 		const entity = normalizeEbaEntity(raw);
 		if (entity) entities.push(entity);
- 	}
+	}
 
 	return entities;
 }
 
 function mapEbaTypeToCategory(entityType: string): string {
 	return entityType;
+}
+
+export async function parseEbaEntities(input: ParseInput): Promise<NormalizedEntity[]> {
+	if (input.stream) {
+		return parseEbaStream(input.stream as unknown as ReadableStream);
+	}
+
+	if (input.text) {
+		return parseEbaPayload(JSON.parse(input.text));
+	}
+
+	throw new Error('EBA parser requires a JSON stream or JSON text body');
 }
